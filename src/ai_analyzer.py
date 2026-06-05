@@ -6,7 +6,7 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-2.0-flash"
 
 
 def _call(prompt: str, max_tokens: int = 1024) -> str:
