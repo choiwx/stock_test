@@ -2,7 +2,7 @@
 import logging
 import os
 
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +11,12 @@ MODEL = "gemini-2.0-flash"
 
 def _call(prompt: str, max_tokens: int = 1024) -> str:
     try:
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        model = genai.GenerativeModel(
-            MODEL,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config={"max_output_tokens": max_tokens},
         )
-        response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
