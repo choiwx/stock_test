@@ -1,0 +1,50 @@
+name: Daily Stock Report
+
+on:
+  schedule:
+    # 매일 오전 7시 KST = 전날 22:00 UTC (월~금 발송: 일~목 22:00 UTC)
+    - cron: '0 22 * * 0-4'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '조회 날짜 (YYYYMMDD, 비워두면 전일 자동)'
+        required: false
+        default: ''
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies (weasyprint)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
+            libffi-dev shared-mime-info fonts-noto-cjk
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run report
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          DATE_ARG="${{ github.event.inputs.date }}"
+          if [ -n "$DATE_ARG" ]; then
+            python src/main.py "$DATE_ARG"
+          else
+            python src/main.py
+          fi
