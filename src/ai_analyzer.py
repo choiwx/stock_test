@@ -22,8 +22,6 @@ def _call(prompt: str, max_tokens: int = 1024) -> str:
         logger.error(f"Gemini API call failed: {e}")
         return "(AI 분석을 불러오지 못했습니다.)"
 
-    def fmt(val, spec):
-        return format(val, spec) if isinstance(val, (int, float)) else 'N/A'
 
 def market_summary_analysis(data: dict) -> str:
     kospi = data["market"].get("kospi", {})
@@ -58,15 +56,18 @@ def shinsegae_analysis(data: dict) -> str:
     per = shinsegae.get("per")
     pbr = shinsegae.get("pbr")
 
+    def fmt(val, spec):
+        return format(val, spec) if isinstance(val, (int, float)) else 'N/A'
+
     prompt = f"""당신은 한국 유통/소매 섹터 전문 증권 애널리스트입니다.
 아래 (주)신세계 전일 주가 데이터를 바탕으로 주가 요인 분석을 한국어로 작성하세요.
 4~5문장으로 전문적이고 구체적으로 작성해 주세요.
 
 데이터:
-- 종가: {f'{close:,.0f}원' if close else 'N/A'}
-- 전일대비 등락률: {f'{change_pct:+.2f}%' if change_pct is not None else 'N/A'}
-- PER: {f'{per:.2f}' if per else 'N/A'}
-- PBR: {f'{pbr:.2f}' if pbr else 'N/A'}
+- 종가: {fmt(close, ',.0f') + '원' if isinstance(close, (int, float)) else 'N/A'}
+- 전일대비 등락률: {fmt(change_pct, '+.2f') + '%' if isinstance(change_pct, (int, float)) else 'N/A'}
+- PER: {fmt(per, '.2f')}
+- PBR: {fmt(pbr, '.2f')}
 
 분석에 포함할 내용:
 1. 주가 등락의 주요 원인 (기업 실적, 업황, 거시경제 요인 등)
