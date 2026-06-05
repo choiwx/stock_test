@@ -29,15 +29,18 @@ def market_summary_analysis(data: dict) -> str:
     usdkrw = data["fx_gold"].get("usdkrw", {})
     gold = data["fx_gold"].get("gold", {})
 
+    def fmt(val, spec):
+        return format(val, spec) if isinstance(val, (int, float)) else 'N/A'
+
     prompt = f"""당신은 한국 증권시장 전문 애널리스트입니다.
 아래 전일 시장 데이터를 바탕으로 시장 요약 코멘트를 한국어로 3~4문장으로 작성하세요.
 전문적이고 간결하게, 주요 등락 원인과 배경을 설명해 주세요.
 
 데이터:
-- KOSPI 종가: {kospi.get('close', 'N/A'):,.2f} ({kospi.get('change_pct', 0):+.2f}%)
-- KOSDAQ 종가: {kosdaq.get('close', 'N/A'):,.2f} ({kosdaq.get('change_pct', 0):+.2f}%)
-- USD/KRW: {usdkrw.get('close', 'N/A'):,.2f}원 ({usdkrw.get('change_pct', 0):+.2f}%)
-- 금 선물(USD/oz): {gold.get('close', 'N/A'):,.2f} ({gold.get('change_pct', 0):+.2f}%)
+- KOSPI 종가: {fmt(kospi.get('close'), ',.2f')} ({fmt(kospi.get('change_pct'), '+.2f')}%)
+- KOSDAQ 종가: {fmt(kosdaq.get('close'), ',.2f')} ({fmt(kosdaq.get('change_pct'), '+.2f')}%)
+- USD/KRW: {fmt(usdkrw.get('close'), ',.2f')}원 ({fmt(usdkrw.get('change_pct'), '+.2f')}%)
+- 금 선물(USD/oz): {fmt(gold.get('close'), ',.2f')} ({fmt(gold.get('change_pct'), '+.2f')}%)
 
 주요 등락 원인과 국내외 거시경제 배경을 중심으로 요약해 주세요.
 """
