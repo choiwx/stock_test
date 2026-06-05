@@ -56,40 +56,44 @@
 <div class="section">
   <div class="section-title">1. 전체 시장 요약</div>
   <div class="market-cards">
+    {% set kospi_pct = market.kospi.get('change_pct', none) %}
+    {% set kosdaq_pct = market.kosdaq.get('change_pct', none) %}
+    {% set usdkrw_pct = fx_gold.usdkrw.get('change_pct', none) %}
+    {% set gold_pct = fx_gold.gold.get('change_pct', none) %}
     <div class="card">
       <div class="label">KOSPI</div>
-      <div class="value {% if market.kospi.change_pct > 0 %}up{% elif market.kospi.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {{ "%.2f"|format(market.kospi.close) if market.kospi.close else 'N/A' }}
+      <div class="value {% if kospi_pct is not none and kospi_pct > 0 %}up{% elif kospi_pct is not none and kospi_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.2f"|format(market.kospi.close) if market.kospi.get('close') else 'N/A' }}
       </div>
-      <div class="change {% if market.kospi.change_pct > 0 %}up{% elif market.kospi.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {% if market.kospi.change_pct is not none %}{{ "%+.2f%%"|format(market.kospi.change_pct) }}{% else %}N/A{% endif %}
+      <div class="change {% if kospi_pct is not none and kospi_pct > 0 %}up{% elif kospi_pct is not none and kospi_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if kospi_pct is not none %}{{ "%+.2f%%"|format(kospi_pct) }}{% else %}N/A{% endif %}
       </div>
     </div>
     <div class="card">
       <div class="label">KOSDAQ</div>
-      <div class="value {% if market.kosdaq.change_pct > 0 %}up{% elif market.kosdaq.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {{ "%.2f"|format(market.kosdaq.close) if market.kosdaq.close else 'N/A' }}
+      <div class="value {% if kosdaq_pct is not none and kosdaq_pct > 0 %}up{% elif kosdaq_pct is not none and kosdaq_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.2f"|format(market.kosdaq.close) if market.kosdaq.get('close') else 'N/A' }}
       </div>
-      <div class="change {% if market.kosdaq.change_pct > 0 %}up{% elif market.kosdaq.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {% if market.kosdaq.change_pct is not none %}{{ "%+.2f%%"|format(market.kosdaq.change_pct) }}{% else %}N/A{% endif %}
+      <div class="change {% if kosdaq_pct is not none and kosdaq_pct > 0 %}up{% elif kosdaq_pct is not none and kosdaq_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if kosdaq_pct is not none %}{{ "%+.2f%%"|format(kosdaq_pct) }}{% else %}N/A{% endif %}
       </div>
     </div>
     <div class="card">
       <div class="label">USD/KRW</div>
-      <div class="value {% if fx_gold.usdkrw.change_pct > 0 %}up{% elif fx_gold.usdkrw.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {{ "%.1f"|format(fx_gold.usdkrw.close) if fx_gold.usdkrw.close else 'N/A' }}
+      <div class="value {% if usdkrw_pct is not none and usdkrw_pct > 0 %}up{% elif usdkrw_pct is not none and usdkrw_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.1f"|format(fx_gold.usdkrw.close) if fx_gold.usdkrw.get('close') else 'N/A' }}
       </div>
-      <div class="change {% if fx_gold.usdkrw.change_pct > 0 %}up{% elif fx_gold.usdkrw.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {% if fx_gold.usdkrw.change_pct is not none %}{{ "%+.2f%%"|format(fx_gold.usdkrw.change_pct) }}{% else %}N/A{% endif %}
+      <div class="change {% if usdkrw_pct is not none and usdkrw_pct > 0 %}up{% elif usdkrw_pct is not none and usdkrw_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if usdkrw_pct is not none %}{{ "%+.2f%%"|format(usdkrw_pct) }}{% else %}N/A{% endif %}
       </div>
     </div>
     <div class="card">
       <div class="label">금 (USD/oz)</div>
-      <div class="value {% if fx_gold.gold.change_pct > 0 %}up{% elif fx_gold.gold.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {{ "%.1f"|format(fx_gold.gold.close) if fx_gold.gold.close else 'N/A' }}
+      <div class="value {% if gold_pct is not none and gold_pct > 0 %}up{% elif gold_pct is not none and gold_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.1f"|format(fx_gold.gold.close) if fx_gold.gold.get('close') else 'N/A' }}
       </div>
-      <div class="change {% if fx_gold.gold.change_pct > 0 %}up{% elif fx_gold.gold.change_pct < 0 %}down{% else %}neutral{% endif %}">
-        {% if fx_gold.gold.change_pct is not none %}{{ "%+.2f%%"|format(fx_gold.gold.change_pct) }}{% else %}N/A{% endif %}
+      <div class="change {% if gold_pct is not none and gold_pct > 0 %}up{% elif gold_pct is not none and gold_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if gold_pct is not none %}{{ "%+.2f%%"|format(gold_pct) }}{% else %}N/A{% endif %}
       </div>
     </div>
   </div>
