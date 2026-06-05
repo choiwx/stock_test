@@ -1,0 +1,8 @@
+pykrx>=1.0.45
+finance-datareader>=0.9.50
+google-generativeai>=0.7.0
+jinja2>=3.1.0
+weasyprint>=61.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+pandas>=2.0.0
