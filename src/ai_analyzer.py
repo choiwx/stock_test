@@ -3,19 +3,23 @@ import logging
 import os
 
 from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-2.0-flash"
 
 
-def _call(prompt: str, max_tokens: int = 1024) -> str:
+def _call(prompt: str, max_tokens: int = 2048) -> str:
     try:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         response = client.models.generate_content(
             model=MODEL,
             contents=prompt,
-            config={"max_output_tokens": max_tokens},
+            config=types.GenerateContentConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.7,
+            ),
         )
         return response.text.strip()
     except Exception as e:
@@ -35,6 +39,7 @@ def market_summary_analysis(data: dict) -> str:
     prompt = f"""당신은 한국 증권시장 전문 애널리스트입니다.
 아래 전일 시장 데이터를 바탕으로 시장 요약 코멘트를 한국어로 3~4문장으로 작성하세요.
 전문적이고 간결하게, 주요 등락 원인과 배경을 설명해 주세요.
+반드시 완전한 문장으로 끝내주세요.
 
 데이터:
 - KOSPI 종가: {fmt(kospi.get('close'), ',.2f')} ({fmt(kospi.get('change_pct'), '+.2f')}%)
@@ -44,7 +49,7 @@ def market_summary_analysis(data: dict) -> str:
 
 주요 등락 원인과 국내외 거시경제 배경을 중심으로 요약해 주세요.
 """
-    return _call(prompt, max_tokens=512)
+    return _call(prompt, max_tokens=1024)
 
 
 def shinsegae_analysis(data: dict) -> str:
@@ -62,6 +67,7 @@ def shinsegae_analysis(data: dict) -> str:
     prompt = f"""당신은 한국 유통/소매 섹터 전문 증권 애널리스트입니다.
 아래 (주)신세계 전일 주가 데이터를 바탕으로 주가 요인 분석을 한국어로 작성하세요.
 4~5문장으로 전문적이고 구체적으로 작성해 주세요.
+반드시 완전한 문장으로 끝내주세요.
 
 데이터:
 - 종가: {fmt(close, ',.0f') + '원' if isinstance(close, (int, float)) else 'N/A'}
@@ -74,12 +80,13 @@ def shinsegae_analysis(data: dict) -> str:
 2. 밸류에이션 평가 (PER/PBR 기준 저평가/고평가 여부)
 3. 단기 주가 전망 및 투자자 참고 사항
 """
-    return _call(prompt, max_tokens=600)
+    return _call(prompt, max_tokens=1200)
 
 
 def retail_sector_issues() -> tuple[str, list[str]]:
     prompt = """당신은 한국 유통/소매 섹터 전문 애널리스트입니다.
 최근 국내외 유통 섹터의 주요 이슈와 동향을 한국어로 작성하세요.
+반드시 완전한 문장으로 끝내주세요.
 
 다음 형식으로 작성해 주세요:
 1. 국내 유통 섹터 주요 이슈 (2~3가지, 각 2~3문장)
@@ -88,7 +95,7 @@ def retail_sector_issues() -> tuple[str, list[str]]:
 
 전문적이고 실제 리포트처럼 작성해 주세요.
 """
-    analysis = _call(prompt, max_tokens=800)
+    analysis = _call(prompt, max_tokens=1600)
 
     refs = [
         "https://www.hankyung.com/economy",
