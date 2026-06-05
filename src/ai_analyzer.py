@@ -22,6 +22,8 @@ def _call(prompt: str, max_tokens: int = 1024) -> str:
         logger.error(f"Gemini API call failed: {e}")
         return "(AI 분석을 불러오지 못했습니다.)"
 
+    def fmt(val, spec):
+        return format(val, spec) if isinstance(val, (int, float)) else 'N/A'
 
 def market_summary_analysis(data: dict) -> str:
     kospi = data["market"].get("kospi", {})
