@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 10pt; color: #1a1a2e; line-height: 1.6; }
+
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%); color: white; padding: 24px 28px 20px; border-radius: 4px; margin-bottom: 20px; }
+  .header h1 { font-size: 18pt; font-weight: 700; letter-spacing: -0.5px; }
+  .header .subtitle { font-size: 9pt; color: #a8b2d8; margin-top: 4px; }
+  .header .date { font-size: 9pt; color: #e0e0e0; margin-top: 8px; text-align: right; }
+
+  .section { margin-bottom: 22px; }
+  .section-title { font-size: 12pt; font-weight: 700; color: #0f3460; border-left: 4px solid #e94560; padding-left: 10px; margin-bottom: 12px; }
+
+  .market-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .card { flex: 1; min-width: 100px; background: #f8f9fc; border: 1px solid #e0e4f0; border-radius: 6px; padding: 10px 12px; }
+  .card .label { font-size: 8pt; color: #6b7280; margin-bottom: 3px; }
+  .card .value { font-size: 13pt; font-weight: 700; }
+  .card .change { font-size: 8.5pt; margin-top: 2px; }
+  .up { color: #e94560; }
+  .down { color: #0066cc; }
+  .neutral { color: #6b7280; }
+
+  .analysis-box { background: #f0f4ff; border-left: 3px solid #0f3460; border-radius: 0 6px 6px 0; padding: 12px 14px; font-size: 9.5pt; color: #2d3748; line-height: 1.7; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  thead tr { background: #0f3460; color: white; }
+  thead th { padding: 9px 8px; text-align: center; font-weight: 600; letter-spacing: 0.3px; }
+  tbody tr:nth-child(even) { background: #f8f9fc; }
+  tbody td { padding: 8px; text-align: center; border-bottom: 1px solid #e8ecf5; }
+  td.name { text-align: left; font-weight: 600; padding-left: 10px; }
+  td.ticker { color: #6b7280; font-size: 8.5pt; }
+
+  .issues-text { font-size: 9.5pt; white-space: pre-wrap; line-height: 1.8; color: #2d3748; }
+
+  .ref-list { list-style: none; }
+  .ref-list li { padding: 4px 0; font-size: 9pt; border-bottom: 1px dashed #e0e4f0; }
+  .ref-list li::before { content: "📎 "; }
+  .ref-list a { color: #0f3460; text-decoration: none; word-break: break-all; }
+
+  .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e0e4f0; font-size: 8pt; color: #9ca3af; text-align: center; }
+  .divider { height: 1px; background: linear-gradient(to right, #e94560, #0f3460, transparent); margin: 18px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>신세계그룹 주식 시황 리포트</h1>
+  <div class="subtitle">Shinsegae Group Daily Market Report</div>
+  <div class="date">기준일: {{ report_date }} &nbsp;|&nbsp; 발행: {{ publish_date }}</div>
+</div>
+
+<div class="section">
+  <div class="section-title">1. 전체 시장 요약</div>
+  <div class="market-cards">
+    <div class="card">
+      <div class="label">KOSPI</div>
+      <div class="value {% if market.kospi.change_pct > 0 %}up{% elif market.kospi.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.2f"|format(market.kospi.close) if market.kospi.close else 'N/A' }}
+      </div>
+      <div class="change {% if market.kospi.change_pct > 0 %}up{% elif market.kospi.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if market.kospi.change_pct is not none %}{{ "%+.2f%%"|format(market.kospi.change_pct) }}{% else %}N/A{% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">KOSDAQ</div>
+      <div class="value {% if market.kosdaq.change_pct > 0 %}up{% elif market.kosdaq.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.2f"|format(market.kosdaq.close) if market.kosdaq.close else 'N/A' }}
+      </div>
+      <div class="change {% if market.kosdaq.change_pct > 0 %}up{% elif market.kosdaq.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if market.kosdaq.change_pct is not none %}{{ "%+.2f%%"|format(market.kosdaq.change_pct) }}{% else %}N/A{% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">USD/KRW</div>
+      <div class="value {% if fx_gold.usdkrw.change_pct > 0 %}up{% elif fx_gold.usdkrw.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.1f"|format(fx_gold.usdkrw.close) if fx_gold.usdkrw.close else 'N/A' }}
+      </div>
+      <div class="change {% if fx_gold.usdkrw.change_pct > 0 %}up{% elif fx_gold.usdkrw.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if fx_gold.usdkrw.change_pct is not none %}{{ "%+.2f%%"|format(fx_gold.usdkrw.change_pct) }}{% else %}N/A{% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">금 (USD/oz)</div>
+      <div class="value {% if fx_gold.gold.change_pct > 0 %}up{% elif fx_gold.gold.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {{ "%.1f"|format(fx_gold.gold.close) if fx_gold.gold.close else 'N/A' }}
+      </div>
+      <div class="change {% if fx_gold.gold.change_pct > 0 %}up{% elif fx_gold.gold.change_pct < 0 %}down{% else %}neutral{% endif %}">
+        {% if fx_gold.gold.change_pct is not none %}{{ "%+.2f%%"|format(fx_gold.gold.change_pct) }}{% else %}N/A{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="analysis-box">{{ market_analysis }}</div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="section-title">2. 신세계그룹 종목 현황</div>
+  <table>
+    <thead>
+      <tr>
+        <th>종목명</th><th>종목코드</th><th>종가 (원)</th><th>전일가 (원)</th><th>전일대비</th><th>등락률</th><th>PER</th><th>PBR</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in stocks %}
+      <tr>
+        <td class="name">{{ s.name }}</td>
+        <td class="ticker">{{ s.ticker }}</td>
+        <td>{{ "{:,.0f}".format(s.close) if s.close else '-' }}</td>
+        <td>{{ "{:,.0f}".format(s.prev_close) if s.prev_close else '-' }}</td>
+        <td class="{% if s.change and s.change > 0 %}up{% elif s.change and s.change < 0 %}down{% else %}neutral{% endif %}">
+          {{ "{:+,.0f}".format(s.change) if s.change is not none else '-' }}
+        </td>
+        <td class="{% if s.change_pct and s.change_pct > 0 %}up{% elif s.change_pct and s.change_pct < 0 %}down{% else %}neutral{% endif %}">
+          {{ "{:+.2f}%".format(s.change_pct) if s.change_pct is not none else '-' }}
+        </td>
+        <td>{{ "%.2f"|format(s.per) if s.per else '-' }}</td>
+        <td>{{ "%.2f"|format(s.pbr) if s.pbr else '-' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="section-title">3. (주)신세계 주가 요인 분석</div>
+  <div class="analysis-box">{{ shinsegae_analysis }}</div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="section-title">4. 국내외 유통 섹터 이슈</div>
+  <div class="issues-text">{{ sector_issues }}</div>
+</div>
+
+<div class="divider"></div>
+
+<div class="section">
+  <div class="section-title">5. 참고자료</div>
+  <ul class="ref-list">
+    {% for url in references %}
+    <li><a href="{{ url }}">{{ url }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="footer">
+  본 리포트는 AI 기반 자동 생성 자료로, 투자 판단의 최종 책임은 투자자 본인에게 있습니다.<br>
+  © {{ publish_date[:4] }} Shinsegae Group IR Report System
+</div>
+
+</body>
+</html>
