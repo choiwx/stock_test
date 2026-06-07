@@ -182,7 +182,6 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
         r = requests.get(url, headers=_NAVER_HEADERS, timeout=10)
         r.raise_for_status()
         data = r.json()
-        # Log all keys for diagnostics
         logger.info(f"{ticker} mobile basic API keys: {list(data.keys())[:20]}")
         per = _num(data.get("per") or data.get("PER") or data.get("perRatio"))
         pbr = _num(data.get("pbr") or data.get("PBR") or data.get("pbrRatio"))
@@ -192,28 +191,46 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
     except Exception as e:
         logger.warning(f"{ticker} mobile basic API 실패: {e}")
 
-    # 2차: sise 페이지 em#_per, em#_pbr
+    # 2차: sise 페이지(PER) + main 페이지(PBR)
+    per2, pbr2 = None, None
     try:
-        url = f"https://finance.naver.com/item/sise.naver?code={ticker}"
-        r = requests.get(url, headers=_NAVER_HTML_HEADERS, timeout=10)
-        r.raise_for_status()
         from lxml import etree
+
+        # PER — sise.naver em#_per
+        r = requests.get(
+            f"https://finance.naver.com/item/sise.naver?code={ticker}",
+            headers=_NAVER_HTML_HEADERS, timeout=10,
+        )
+        r.raise_for_status()
         tree = etree.HTML(r.content)
-        # 진단: id 속성이 있는 em 요소 목록
-        em_ids = [e.get("id") for e in tree.xpath('//em[@id]')]
-        logger.info(f"{ticker} sise em IDs: {em_ids}")
         per_nodes = tree.xpath('//*[@id="_per"]')
-        pbr_nodes = tree.xpath('//*[@id="_pbr"]')
-        # PBR 후보 ID들도 시도
-        if not pbr_nodes:
-            pbr_nodes = tree.xpath('//*[@id="_pbr1"]') or tree.xpath('//*[contains(@id,"pbr")]')
         per2 = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
-        pbr2 = _num("".join(pbr_nodes[0].itertext()).strip()) if pbr_nodes else None
-        logger.info(f"{ticker} sise 페이지 → PER={per2}, PBR={pbr2}")
-        if per2 is not None or pbr2 is not None:
-            return per2, pbr2, "네이버 증권"
+        logger.info(f"{ticker} sise PER={per2}")
+
+        # PBR — main.naver 투자정보 테이블에서 'PBR' 텍스트 옆 값 추출
+        r2 = requests.get(
+            f"https://finance.naver.com/item/main.naver?code={ticker}",
+            headers=_NAVER_HTML_HEADERS, timeout=10,
+        )
+        r2.raise_for_status()
+        tree2 = etree.HTML(r2.content)
+        for row in tree2.xpath('//table//tr'):
+            cells = row.xpath('.//th | .//td')
+            texts = ["".join(c.itertext()).strip() for c in cells]
+            for i, t in enumerate(texts):
+                if t == "PBR" and i + 1 < len(texts):
+                    pbr2 = _num(texts[i + 1])
+                    if pbr2 is not None:
+                        break
+            if pbr2 is not None:
+                break
+        logger.info(f"{ticker} main PBR={pbr2}")
+
     except Exception as e:
-        logger.warning(f"{ticker} sise 페이지 실패: {e}")
+        logger.warning(f"{ticker} sise/main 페이지 실패: {e}")
+
+    if per2 is not None or pbr2 is not None:
+        return per2, pbr2, "네이버 증권"
 
     return None, None, ""
 
