@@ -177,18 +177,19 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 
 def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[float]]:
-    """Gemini url_context로 네이버 동일업종비교 표에서 PER/PBR 직접 읽기."""
+    """Gemini url_context로 네이버 증권 main 페이지 동일업종비교 표에서 PER/PBR 읽기."""
     import json
     import os
     try:
         from google import genai
         from google.genai import types
 
-        url = f"https://finance.naver.com/item/coinfo.naver?code={ticker}&target=compare"
+        url = f"https://finance.naver.com/item/main.naver?code={ticker}"
         prompt = (
-            f"다음 URL의 HTML 페이지에 있는 '동일업종비교' 표를 읽어주세요.\n"
+            f"다음 URL에 접속해서 페이지 맨 아래에 있는 '동일업종비교' 표를 찾아주세요.\n"
             f"URL: {url}\n\n"
-            f"표의 첫 번째 데이터 행(해당 종목 본인)에서 PER과 PBR 숫자값만 추출해 주세요.\n"
+            f"그 표의 13번째 행과 14번째 행에 PER과 PBR 수치가 있습니다.\n"
+            f"해당 종목({ticker})의 PER과 PBR 숫자값만 추출해 주세요.\n"
             f"반드시 아래 JSON 형식으로만 답하세요. 다른 설명은 절대 추가하지 마세요.\n"
             f'예시: {{"per": 12.34, "pbr": 0.56}}\n'
             f"값이 없거나 '-'이면 null로 표시하세요."
@@ -196,7 +197,6 @@ def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[floa
 
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-        # 사용 가능한 모델 중 url_context 지원 모델 선택
         preferred = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-flash"]
         available = [m.name.replace("models/", "") for m in client.models.list()]
         model = next((m for m in preferred if m in available), available[0] if available else "gemini-2.5-flash")
