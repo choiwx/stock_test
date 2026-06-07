@@ -137,7 +137,6 @@ def get_fx_and_gold(date_str: str) -> dict:
             data = r.json()
             logger.info(f"Gold URL 성공: {_gold_url[:70]}")
 
-            # /basic 엔드포인트: 단일 객체 응답
             if isinstance(data, dict) and "closePrice" in data:
                 close = _num(data.get("closePrice"))
                 prev = data.get("previousClosePrice") or data.get("basePrice")
@@ -152,7 +151,6 @@ def get_fx_and_gold(date_str: str) -> dict:
                     logger.info(f"Gold: {close:,.0f} KRW/g")
                     break
 
-            # prices 배열 응답
             prices = data.get("result") or data.get("prices") or data.get("data") or []
             if isinstance(prices, dict):
                 prices = prices.get("prices", [])
@@ -176,23 +174,20 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[float]]:
-    """Gemini url_context로 네이버 증권 main 페이지 동일업종비교 표에서 PER/PBR 읽기."""
+def _get_per_pbr_via_gemini(ticker: str, name: str) -> tuple[Optional[float], Optional[float]]:
+    """Gemini Google Search 그라운딩으로 PER/PBR 검색."""
     import json
     import os
     try:
         from google import genai
         from google.genai import types
 
-        url = f"https://finance.naver.com/item/main.naver?code={ticker}"
         prompt = (
-            f"다음 URL에 접속해서 페이지 맨 아래에 있는 '동일업종비교' 표를 찾아주세요.\n"
-            f"URL: {url}\n\n"
-            f"그 표의 13번째 행과 14번째 행에 PER과 PBR 수치가 있습니다.\n"
-            f"해당 종목({ticker})의 PER과 PBR 숫자값만 추출해 주세요.\n"
+            f"한국 주식 종목 {name}(종목코드: {ticker})의 현재 PER(주가수익비율)과 PBR(주가순자산비율) 수치를 "
+            f"네이버 증권 또는 최신 금융 데이터에서 찾아주세요.\n"
             f"반드시 아래 JSON 형식으로만 답하세요. 다른 설명은 절대 추가하지 마세요.\n"
             f'예시: {{"per": 12.34, "pbr": 0.56}}\n'
-            f"값이 없거나 '-'이면 null로 표시하세요."
+            f"값이 없거나 확인 불가면 null로 표시하세요."
         )
 
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -205,7 +200,7 @@ def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[floa
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
-                tools=[types.Tool(url_context=types.UrlContext())],
+                tools=[types.Tool(google_search=types.GoogleSearch())],
                 temperature=0,
             ),
         )
@@ -213,7 +208,6 @@ def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[floa
         text = (response.text or "").strip()
         logger.info(f"{ticker} Gemini PER/PBR 응답: {text[:200]}")
 
-        # JSON 파싱
         json_str = text
         if "```" in text:
             json_str = text.split("```")[1].replace("json", "").strip()
@@ -227,13 +221,13 @@ def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[floa
         return None, None
 
 
-def _get_naver_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
+def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Optional[float], str]:
     """
-    Gemini url_context → 모바일 API 순서로 PER, PBR 추출.
+    Gemini Google Search → 모바일 API 순서로 PER, PBR 추출.
     반환: (per, pbr, source_note)
     """
-    # ── 1단계: Gemini가 URL 직접 접속 ─────────────────────────────
-    per, pbr = _get_per_pbr_via_gemini(ticker)
+    # ── 1단계: Gemini Google Search ────────────────────────────────
+    per, pbr = _get_per_pbr_via_gemini(ticker, name)
     if per is not None or pbr is not None:
         logger.info(f"{ticker} PER={per}, PBR={pbr} (Gemini)")
         return per, pbr, "네이버 증권 (동일업종비교)"
@@ -301,8 +295,8 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR — 네이버 증권
-        per, pbr, src = _get_naver_per_pbr(ticker)
+        # PER/PBR — Gemini Search
+        per, pbr, src = _get_naver_per_pbr(ticker, name)
         row["per"] = per
         row["pbr"] = pbr
         if src and not per_pbr_source:
@@ -310,7 +304,6 @@ def get_stock_data(date_str: str) -> list[dict]:
 
         rows.append(row)
 
-    # 출처 메타 정보를 rows에 첨부 (report_generator에서 사용)
     for r in rows:
         r["_per_pbr_source"] = per_pbr_source
 
