@@ -177,10 +177,8 @@ def get_fx_and_gold(date_str: str) -> dict:
 def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Optional[float], str]:
     """
     네이버 증권 동일업종비교 표에서 lxml XPath로 PER/PBR 추출.
-    사용자 확인 XPath 기준:
-      PER → //table/tbody/tr[13]/td[1]
-      PBR → //table/tbody/tr[14]/td[1]
-    동일업종비교 표는 coinfo.naver iframe에 정적 HTML로 존재.
+    PER → //table/tbody/tr[13]/td[1]
+    PBR → //table/tbody/tr[14]/td[1]
     반환: (per, pbr, source_note)
     """
     try:
@@ -188,12 +186,25 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
 
         url = f"https://finance.naver.com/item/coinfo.naver?code={ticker}&target=compare"
         r = requests.get(url, headers=_NAVER_HTML_HEADERS, timeout=15)
-        r.raise_for_status()
+        logger.info(f"{ticker} coinfo HTTP {r.status_code}, 응답 길이={len(r.content)}")
 
         tree = etree.HTML(r.content)
 
+        # 진단: 모든 테이블과 행 수 로깅
+        tables = tree.xpath("//table")
+        logger.info(f"{ticker} 테이블 수={len(tables)}")
+        for i, tbl in enumerate(tables[:3]):
+            rows = tbl.xpath(".//tr")
+            logger.info(f"{ticker} table[{i}] 행수={len(rows)}, 샘플행13={[''.join(c.itertext()).strip() for c in rows[12].xpath('td')][:4] if len(rows) > 12 else 'N/A'}")
+
         per_nodes = tree.xpath("//table/tbody/tr[13]/td[1]")
         pbr_nodes = tree.xpath("//table/tbody/tr[14]/td[1]")
+
+        # tbody 없는 경우 fallback
+        if not per_nodes:
+            per_nodes = tree.xpath("//table/tr[13]/td[1]")
+        if not pbr_nodes:
+            pbr_nodes = tree.xpath("//table/tr[14]/td[1]")
 
         per_text = "".join(per_nodes[0].itertext()).strip() if per_nodes else None
         pbr_text = "".join(pbr_nodes[0].itertext()).strip() if pbr_nodes else None
