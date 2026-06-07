@@ -74,6 +74,7 @@ def market_summary_analysis(data: dict) -> str:
     prompt = f"""당신은 한국 증권시장 전문 애널리스트입니다.
 아래 전일 시장 데이터를 바탕으로 시장 요약 코멘트를 한국어로 3~4문장으로 작성하세요.
 전문적이고 간결하게, 주요 등락 원인과 배경을 설명해 주세요.
+[주의] 제목, 날짜, 머릿말을 절대 추가하지 마세요. 본문만 바로 작성하세요.
 
 데이터:
 - KOSPI 종가: {fmt(kospi.get('close'), ',.2f')} ({fmt(kospi.get('change_pct'), '+.2f')}%)
@@ -90,6 +91,7 @@ def shinsegae_analysis(data: dict) -> str:
     """Generate (주)신세계 주가 요인 분석."""
     stocks = data["stocks"]
     shinsegae = next((s for s in stocks if s["ticker"] == "004170"), {})
+    report_date = data.get("date", "")
 
     close = shinsegae.get("close")
     change_pct = shinsegae.get("change_pct")
@@ -100,10 +102,13 @@ def shinsegae_analysis(data: dict) -> str:
         return format(val, spec) if isinstance(val, (int, float)) else 'N/A'
 
     prompt = f"""당신은 한국 유통/소매 섹터 전문 증권 애널리스트입니다.
-아래 (주)신세계 전일 주가 데이터를 바탕으로 주가 요인 분석을 한국어로 작성하세요.
+아래 (주)신세계 전일 주가 데이터({report_date} 기준)를 바탕으로 주가 요인 분석을 한국어로 작성하세요.
 4~5문장으로 전문적이고 구체적으로 작성해 주세요.
 
+[주의] 제목, 날짜, 머릿말을 절대 추가하지 마세요. 본문 분석 내용만 바로 작성하세요.
+
 데이터:
+- 기준일: {report_date}
 - 종가: {fmt(close, ',.0f') + '원' if isinstance(close, (int, float)) else 'N/A'}
 - 전일대비 등락률: {fmt(change_pct, '+.2f') + '%' if isinstance(change_pct, (int, float)) else 'N/A'}
 - PER: {fmt(per, '.2f')}
@@ -126,6 +131,7 @@ def retail_sector_issues(report_date: str = "") -> tuple[str, list[str]]:
 아래 지침에 따라 국내외 유통 섹터 주요 이슈를 한국어로 작성하세요.
 
 [작성 지침]
+- 제목, 날짜, 머릿말을 절대 추가하지 마세요. 형식 항목부터 바로 작성하세요.
 - 반드시 해당 기준일 전후로 실제 보도된 뉴스 기사 또는 국내 증권사 리포트(한국투자증권, 미래에셋, KB증권, NH투자증권, 삼성증권 등)에 근거한 내용만 작성하세요.
 - 근거 없는 내용, 가상의 전문가 인용, 일반론적 서술은 포함하지 마세요.
 - 실제 보도/리포트 내용을 기반으로 구체적인 기업명, 수치, 정책명을 포함해 작성하세요.
@@ -137,7 +143,6 @@ def retail_sector_issues(report_date: str = "") -> tuple[str, list[str]]:
 """
     analysis = _call(prompt, max_tokens=3000)
 
-    # Representative reference sources for retail sector
     refs = [
         "https://www.hankyung.com/economy",
         "https://www.mk.co.kr/news/stock",
