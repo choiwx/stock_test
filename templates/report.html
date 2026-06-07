@@ -15,6 +15,7 @@
   .section { margin-bottom: 22px; }
   .section-title { font-size: 12pt; font-weight: 700; color: #0f3460; border-left: 4px solid #e94560; padding-left: 10px; margin-bottom: 12px; }
 
+  /* Market summary cards */
   .market-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .card { flex: 1; min-width: 100px; background: #f8f9fc; border: 1px solid #e0e4f0; border-radius: 6px; padding: 10px 12px; }
   .card .label { font-size: 8pt; color: #6b7280; margin-bottom: 3px; }
@@ -26,22 +27,27 @@
 
   .analysis-box { background: #f0f4ff; border-left: 3px solid #0f3460; border-radius: 0 6px 6px 0; padding: 12px 14px; font-size: 9.5pt; color: #2d3748; line-height: 1.7; }
 
+  /* Stock table */
   table { width: 100%; border-collapse: collapse; font-size: 9pt; }
   thead tr { background: #0f3460; color: white; }
   thead th { padding: 9px 8px; text-align: center; font-weight: 600; letter-spacing: 0.3px; }
   tbody tr:nth-child(even) { background: #f8f9fc; }
+  tbody tr:hover { background: #eef2ff; }
   tbody td { padding: 8px; text-align: center; border-bottom: 1px solid #e8ecf5; }
   td.name { text-align: left; font-weight: 600; padding-left: 10px; }
   td.ticker { color: #6b7280; font-size: 8.5pt; }
 
+  /* Sector issues */
   .issues-text { font-size: 9.5pt; white-space: pre-wrap; line-height: 1.8; color: #2d3748; }
 
+  /* References */
   .ref-list { list-style: none; }
   .ref-list li { padding: 4px 0; font-size: 9pt; border-bottom: 1px dashed #e0e4f0; }
   .ref-list li::before { content: "📎 "; }
   .ref-list a { color: #0f3460; text-decoration: none; word-break: break-all; }
 
   .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e0e4f0; font-size: 8pt; color: #9ca3af; text-align: center; }
+
   .divider { height: 1px; background: linear-gradient(to right, #e94560, #0f3460, transparent); margin: 18px 0; }
 </style>
 </head>
@@ -53,8 +59,10 @@
   <div class="date">기준일: {{ report_date }} &nbsp;|&nbsp; 발행: {{ publish_date }}</div>
 </div>
 
+<!-- 1. 전체 시장 요약 -->
 <div class="section">
   <div class="section-title">1. 전체 시장 요약</div>
+
   <div class="market-cards">
     {% set kospi_pct = market.kospi.get('change_pct', none) %}
     {% set kosdaq_pct = market.kosdaq.get('change_pct', none) %}
@@ -88,26 +96,35 @@
       </div>
     </div>
     <div class="card">
-      <div class="label">금 (USD/oz)</div>
+      <div class="label">금 (KRX, 원/g)</div>
       <div class="value {% if gold_pct is not none and gold_pct > 0 %}up{% elif gold_pct is not none and gold_pct < 0 %}down{% else %}neutral{% endif %}">
-        {{ "%.1f"|format(fx_gold.gold.close) if fx_gold.gold.get('close') else 'N/A' }}
+        {{ "{:,.0f}".format(fx_gold.gold.close) if fx_gold.gold.get('close') else 'N/A' }}
       </div>
       <div class="change {% if gold_pct is not none and gold_pct > 0 %}up{% elif gold_pct is not none and gold_pct < 0 %}down{% else %}neutral{% endif %}">
         {% if gold_pct is not none %}{{ "%+.2f%%"|format(gold_pct) }}{% else %}N/A{% endif %}
       </div>
     </div>
   </div>
+
   <div class="analysis-box">{{ market_analysis }}</div>
 </div>
 
 <div class="divider"></div>
 
+<!-- 2. 종목 현황 -->
 <div class="section">
   <div class="section-title">2. 신세계그룹 종목 현황</div>
   <table>
     <thead>
       <tr>
-        <th>종목명</th><th>종목코드</th><th>종가 (원)</th><th>전일가 (원)</th><th>전일대비</th><th>등락률</th><th>PER</th><th>PBR</th>
+        <th>종목명</th>
+        <th>종목코드</th>
+        <th>종가 (원)</th>
+        <th>전일가 (원)</th>
+        <th>전일대비</th>
+        <th>등락률</th>
+        <th>PER</th>
+        <th>PBR</th>
       </tr>
     </thead>
     <tbody>
@@ -133,6 +150,7 @@
 
 <div class="divider"></div>
 
+<!-- 3. 신세계 주가 요인 분석 -->
 <div class="section">
   <div class="section-title">3. (주)신세계 주가 요인 분석</div>
   <div class="analysis-box">{{ shinsegae_analysis }}</div>
@@ -140,6 +158,7 @@
 
 <div class="divider"></div>
 
+<!-- 4. 유통 섹터 이슈 -->
 <div class="section">
   <div class="section-title">4. 국내외 유통 섹터 이슈</div>
   <div class="issues-text">{{ sector_issues }}</div>
@@ -147,6 +166,7 @@
 
 <div class="divider"></div>
 
+<!-- 5. 참고자료 -->
 <div class="section">
   <div class="section-title">5. 참고자료</div>
   <ul class="ref-list">
