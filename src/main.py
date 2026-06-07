@@ -25,14 +25,16 @@ from email_sender import send_report
 def run(date_str: str = None) -> None:
     logger.info("=== Starting daily report generation ===")
 
+    # 1. Collect market data
     logger.info("Step 1: Collecting market data...")
     data = collect_all(date_str)
     logger.info(f"Data collected for date: {data['date']}")
 
+    # 2. Generate AI analysis
     logger.info("Step 2: Generating AI analysis...")
     market_analysis = market_summary_analysis(data)
     shin_analysis = shinsegae_analysis(data)
-    sector_text, references = retail_sector_issues()
+    sector_text, references = retail_sector_issues(report_date=data["date"])
 
     ai = {
         "market_analysis": market_analysis,
@@ -41,10 +43,12 @@ def run(date_str: str = None) -> None:
         "references": references,
     }
 
+    # 3. Generate PDF
     logger.info("Step 3: Generating PDF report...")
     pdf_path = build_report(data, ai, output_dir="/tmp")
     logger.info(f"PDF generated: {pdf_path}")
 
+    # 4. Send email
     logger.info("Step 4: Sending email...")
     send_report(pdf_path, data["date"])
 
