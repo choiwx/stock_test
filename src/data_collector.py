@@ -175,27 +175,20 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 
 def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
-    """PER/PBR 추출: Yahoo Finance(PBR) + 네이버 sise(PER)."""
+    """PER/PBR 추출: yfinance(PBR) + 네이버 sise(PER)."""
     per, pbr = None, None
 
-    # 1차: Yahoo Finance quoteSummary — PER(trailingPE) + PBR(priceToBook)
+    # 1차: yfinance — PER(trailingPE) + PBR(priceToBook)
     try:
-        yt = ticker + ".KS"
-        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{yt}?modules=defaultKeyStatistics,summaryDetail"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        result = data.get("quoteSummary", {}).get("result", [])
-        if result:
-            ks = result[0].get("defaultKeyStatistics", {})
-            sd = result[0].get("summaryDetail", {})
-            pbr = _num((ks.get("priceToBook") or {}).get("raw"))
-            per = _num((sd.get("trailingPE") or {}).get("raw"))
-            logger.info(f"{ticker} Yahoo Finance → PER={per}, PBR={pbr}")
-            if per is not None or pbr is not None:
-                return per, pbr, "Yahoo Finance / 네이버 증권"
+        import yfinance as yf
+        info = yf.Ticker(ticker + ".KS").info
+        per = _num(info.get("trailingPE"))
+        pbr = _num(info.get("priceToBook"))
+        logger.info(f"{ticker} yfinance → PER={per}, PBR={pbr}")
+        if per is not None or pbr is not None:
+            return per, pbr, "네이버 증권"
     except Exception as e:
-        logger.warning(f"{ticker} Yahoo Finance 실패: {e}")
+        logger.warning(f"{ticker} yfinance 실패: {e}")
 
     # 2차: 네이버 sise PER (em#_per)
     try:
@@ -219,7 +212,7 @@ def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
 
 
 def get_stock_data(date_str: str) -> list[dict]:
-    """신세계그룹 종목 — FinanceDataReader + PER/PBR."""
+    """신세계그룹 종목 — FinanceDataReader + 네이버 PER/PBR."""
     rows = []
     per_pbr_source = ""
 
