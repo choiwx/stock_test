@@ -24,6 +24,7 @@ def render_html(data: dict, ai: dict) -> str:
         market=data["market"],
         fx_gold=data["fx_gold"],
         stocks=data["stocks"],
+        per_pbr_source=data.get("per_pbr_source", "네이버 증권"),
         market_analysis=ai["market_analysis"],
         shinsegae_analysis=ai["shinsegae_analysis"],
         sector_issues=ai["sector_issues"],
@@ -32,6 +33,7 @@ def render_html(data: dict, ai: dict) -> str:
 
 
 def generate_pdf(html: str, output_path: str) -> str:
+    """Render HTML to PDF using weasyprint."""
     try:
         from weasyprint import HTML
         HTML(string=html).write_pdf(output_path)
