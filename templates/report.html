@@ -46,6 +46,7 @@
   .ref-list li::before { content: "📎 "; }
   .ref-list a { color: #0f3460; text-decoration: none; word-break: break-all; }
 
+  .table-note { font-size: 7.5pt; color: #9ca3af; margin-top: 5px; padding-left: 2px; }
   .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e0e4f0; font-size: 8pt; color: #9ca3af; text-align: center; }
 
   .divider { height: 1px; background: linear-gradient(to right, #e94560, #0f3460, transparent); margin: 18px 0; }
@@ -146,6 +147,7 @@
       {% endfor %}
     </tbody>
   </table>
+  <p class="table-note">* PER/PBR: {{ per_pbr_source if per_pbr_source else '네이버 증권' }} 기준, 최근 12개월 실적 기반 (TTM). 데이터 미제공 종목은 '-' 표시.</p>
 </div>
 
 <div class="divider"></div>
