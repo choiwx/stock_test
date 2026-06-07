@@ -99,36 +99,47 @@ def get_fx_and_gold(date_str: str) -> dict:
     else:
         logger.warning("USD/KRW 데이터 없음 (Yahoo Finance 차단 가능)")
 
-    # 금 시세 — 네이버 KRX 금시장 API
-    try:
-        import requests
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://m.stock.naver.com/",
-        }
-        url = ("https://m.stock.naver.com/front-api/marketIndex/prices"
-               "?category=metals&reutersCode=M04020000&page=1&pageSize=5")
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        prices = data.get("result") or data.get("prices") or []
-        if isinstance(prices, dict):
-            prices = prices.get("prices", [])
-        if len(prices) >= 2:
-            def parse_price(p):
-                return float(str(p.get("closePrice", "") or "").replace(",", "") or 0) or None
-            close = parse_price(prices[0])
-            prev_close = parse_price(prices[1])
-            if close:
-                result["gold"] = {
-                    "close": close,
-                    "change": (close - prev_close) if prev_close else None,
-                    "change_pct": ((close - prev_close) / prev_close * 100) if prev_close else None,
-                    "unit": "KRW/g",
-                }
-                logger.info(f"Gold (KRX): close={close:,.0f} KRW/g")
-    except Exception as e:
-        logger.warning(f"KRX 금 시세 실패: {e}")
+    # 금 시세 — 네이버 M04020000 (KRX 국내금 현물 KRW/g)
+    import requests as _req
+    _gold_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://m.stock.naver.com/",
+    }
+    _gold_urls = [
+        "https://m.stock.naver.com/front-api/marketIndex/prices?category=metals&reutersCode=M04020000&page=1&pageSize=5",
+        "https://m.stock.naver.com/api/index/M04020000/prices?page=1&pageSize=5",
+        "https://m.stock.naver.com/api/marketIndex/prices?category=metals&reutersCode=M04020000&page=1&pageSize=5",
+    ]
+    for _gold_url in _gold_urls:
+        try:
+            r = _req.get(_gold_url, headers=_gold_headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            prices = data.get("result") or data.get("prices") or data.get("data") or []
+            if isinstance(prices, dict):
+                prices = prices.get("prices", [])
+            if len(prices) >= 2:
+                def _parse_gold_price(p):
+                    v = str(p.get("closePrice", "") or p.get("close", "") or "").replace(",", "")
+                    try:
+                        return float(v) or None
+                    except ValueError:
+                        return None
+                close = _parse_gold_price(prices[0])
+                prev_close = _parse_gold_price(prices[1])
+                if close:
+                    result["gold"] = {
+                        "close": close,
+                        "change": (close - prev_close) if prev_close else None,
+                        "change_pct": ((close - prev_close) / prev_close * 100) if prev_close else None,
+                        "unit": "KRW/g",
+                    }
+                    logger.info(f"Gold (KRX M04020000): {close:,.0f} KRW/g (from {_gold_url[:60]})")
+                    break
+        except Exception as e:
+            logger.warning(f"Gold URL 실패 ({_gold_url[:60]}): {e}")
+    else:
+        logger.warning("KRX 금 시세: 모든 엔드포인트 실패")
 
     return result
 
