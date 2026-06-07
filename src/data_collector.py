@@ -182,7 +182,11 @@ def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
     try:
         import yfinance as yf
         info = yf.Ticker(ticker + ".KS").info
-        per = _num(info.get("trailingPE"))
+        # 진단: 값이 있는 키 목록
+        filled = {k: v for k, v in info.items() if v is not None and v != "" and v != "N/A"}
+        logger.info(f"{ticker} yfinance filled keys: {list(filled.keys())[:30]}")
+        logger.info(f"{ticker} yfinance PER candidates: trailingPE={info.get('trailingPE')}, forwardPE={info.get('forwardPE')}, priceToBook={info.get('priceToBook')}, bookValue={info.get('bookValue')}")
+        per = _num(info.get("trailingPE") or info.get("forwardPE"))
         pbr = _num(info.get("priceToBook"))
         logger.info(f"{ticker} yfinance → PER={per}, PBR={pbr}")
         if per is not None or pbr is not None:
