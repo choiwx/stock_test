@@ -175,28 +175,41 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 
 def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Optional[float], str]:
-    """네이버 증권 모바일 API에서 PER/PBR 추출."""
-    # 1차: 모바일 API basic 엔드포인트
-    try:
-        url = f"https://m.stock.naver.com/api/stock/{ticker}/basic"
-        r = requests.get(url, headers=_NAVER_HEADERS, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        logger.info(f"{ticker} mobile basic API keys: {list(data.keys())[:20]}")
-        per = _num(data.get("per") or data.get("PER") or data.get("perRatio"))
-        pbr = _num(data.get("pbr") or data.get("PBR") or data.get("pbrRatio"))
-        logger.info(f"{ticker} mobile basic API → PER={per}, PBR={pbr}")
-        if per is not None or pbr is not None:
-            return per, pbr, "네이버 증권"
-    except Exception as e:
-        logger.warning(f"{ticker} mobile basic API 실패: {e}")
+    """네이버 증권 API에서 PER/PBR 추출."""
+    per, pbr = None, None
 
-    # 2차: sise 페이지(PER) + main 페이지(PBR)
-    per2, pbr2 = None, None
+    # 1차: 모바일 /index API (투자지표 — PER, PBR 포함)
+    _index_urls = [
+        f"https://m.stock.naver.com/api/stock/{ticker}/index",
+        f"https://m.stock.naver.com/api/stock/{ticker}/finance/summary",
+        f"https://m.stock.naver.com/api/stock/{ticker}/totalInfos",
+    ]
+    for url in _index_urls:
+        try:
+            r = requests.get(url, headers=_NAVER_HEADERS, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            endpoint = url.split("/")[-1]
+            logger.info(f"{ticker} {endpoint}: type={type(data).__name__}, keys/len={list(data.keys())[:10] if isinstance(data, dict) else len(data)}")
+            if isinstance(data, dict):
+                per = _num(data.get("per") or data.get("PER") or data.get("perRatio"))
+                pbr = _num(data.get("pbr") or data.get("PBR") or data.get("pbrRatio"))
+            elif isinstance(data, list):
+                for item in data:
+                    label = str(item.get("label", "") or item.get("key", "") or item.get("name", "")).upper()
+                    if label == "PER":
+                        per = _num(item.get("value") or item.get("val"))
+                    elif label == "PBR":
+                        pbr = _num(item.get("value") or item.get("val"))
+            logger.info(f"{ticker} {endpoint} → PER={per}, PBR={pbr}")
+            if per is not None or pbr is not None:
+                return per, pbr, "네이버 증권"
+        except Exception as e:
+            logger.warning(f"{ticker} {url.split('/')[-1]} 실패: {e}")
+
+    # 2차: sise 페이지 PER (em#_per) — PBR은 정적 HTML에 없음
     try:
         from lxml import etree
-
-        # PER — sise.naver em#_per
         r = requests.get(
             f"https://finance.naver.com/item/sise.naver?code={ticker}",
             headers=_NAVER_HTML_HEADERS, timeout=10,
@@ -204,40 +217,13 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
         r.raise_for_status()
         tree = etree.HTML(r.content)
         per_nodes = tree.xpath('//*[@id="_per"]')
-        per2 = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
-        logger.info(f"{ticker} sise PER={per2}")
-
-        # PBR — main.naver 투자정보 테이블에서 'PBR' 텍스트 옆 값 추출
-        r2 = requests.get(
-            f"https://finance.naver.com/item/main.naver?code={ticker}",
-            headers=_NAVER_HTML_HEADERS, timeout=10,
-        )
-        r2.raise_for_status()
-        tree2 = etree.HTML(r2.content)
-        # 진단: 테이블 행 텍스트 샘플
-        all_rows = []
-        for row in tree2.xpath('//table//tr'):
-            cells = row.xpath('.//th | .//td')
-            texts = [t for t in ("".join(c.itertext()).strip() for c in cells) if t]
-            if texts:
-                all_rows.append(texts)
-        logger.info(f"{ticker} main 테이블 행 샘플: {all_rows[:15]}")
-        # PBR 포함 행 탐색
-        for row_texts in all_rows:
-            for i, t in enumerate(row_texts):
-                if "PBR" in t and i + 1 < len(row_texts):
-                    pbr2 = _num(row_texts[i + 1])
-                    if pbr2 is not None:
-                        break
-            if pbr2 is not None:
-                break
-        logger.info(f"{ticker} main PBR={pbr2}")
-
+        per = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
+        logger.info(f"{ticker} sise PER={per}, PBR=없음(정적HTML미지원)")
     except Exception as e:
-        logger.warning(f"{ticker} sise/main 페이지 실패: {e}")
+        logger.warning(f"{ticker} sise 페이지 실패: {e}")
 
-    if per2 is not None or pbr2 is not None:
-        return per2, pbr2, "네이버 증권"
+    if per is not None or pbr is not None:
+        return per, pbr, "네이버 증권"
 
     return None, None, ""
 
@@ -276,7 +262,7 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR — 네이버 모바일 API
+        # PER/PBR — 네이버
         per, pbr, src = _get_naver_per_pbr(ticker, name)
         row["per"] = per
         row["pbr"] = pbr
