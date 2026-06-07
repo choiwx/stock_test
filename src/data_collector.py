@@ -199,8 +199,14 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
         r.raise_for_status()
         from lxml import etree
         tree = etree.HTML(r.content)
+        # 진단: id 속성이 있는 em 요소 목록
+        em_ids = [e.get("id") for e in tree.xpath('//em[@id]')]
+        logger.info(f"{ticker} sise em IDs: {em_ids}")
         per_nodes = tree.xpath('//*[@id="_per"]')
         pbr_nodes = tree.xpath('//*[@id="_pbr"]')
+        # PBR 후보 ID들도 시도
+        if not pbr_nodes:
+            pbr_nodes = tree.xpath('//*[@id="_pbr1"]') or tree.xpath('//*[contains(@id,"pbr")]')
         per2 = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
         pbr2 = _num("".join(pbr_nodes[0].itertext()).strip()) if pbr_nodes else None
         logger.info(f"{ticker} sise 페이지 → PER={per2}, PBR={pbr2}")
