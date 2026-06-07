@@ -1,26 +1,64 @@
-"""AI-powered analysis sections using Gemini API."""
+"""AI-powered analysis sections using Gemini API (google-genai SDK)."""
 import logging
 import os
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash"
+PREFERRED_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+]
+_cached_model = None
 
 
-def _call(prompt: str, max_tokens: int = 1024) -> str:
+def _resolve_model(client) -> str:
+    global _cached_model
+    if _cached_model:
+        return _cached_model
+    available = []
+    for m in client.models.list():
+        actions = getattr(m, "supported_actions", None) or []
+        if not actions or "generateContent" in actions:
+            available.append(m.name.replace("models/", ""))
+    for pref in PREFERRED_MODELS:
+        if pref in available:
+            _cached_model = pref
+            return pref
+    if available:
+        _cached_model = available[0]
+        return available[0]
+    raise RuntimeError("사용 가능한 Gemini 모델이 없습니다.")
+
+
+def _generate(client, model, prompt, max_tokens, disable_thinking):
+    cfg_args = {"max_output_tokens": max_tokens, "temperature": 0.7}
+    if disable_thinking:
+        cfg_args["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    return client.models.generate_content(
+        model=model, contents=prompt,
+        config=types.GenerateContentConfig(**cfg_args),
+    )
+
+
+def _call(prompt: str, max_tokens: int = 4096) -> str:
     try:
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        model = genai.GenerativeModel(
-            MODEL,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens),
-        )
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        model = _resolve_model(client)
+        try:
+            response = _generate(client, model, prompt, max_tokens, True)
+        except Exception:
+            response = _generate(client, model, prompt, max_tokens, False)
+        text = (response.text or "").strip()
+        return text if text else "(AI 분석 결과가 비어 있습니다.)"
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
-        return "(AI 분석을 불러오지 못했습니다.)"
+        return f"(AI 분석을 불러오지 못했습니다. 오류: {e})"
 
 
 def market_summary_analysis(data: dict) -> str:
@@ -45,7 +83,7 @@ def market_summary_analysis(data: dict) -> str:
 
 주요 등락 원인과 국내외 거시경제 배경을 중심으로 요약해 주세요.
 """
-    return _call(prompt, max_tokens=512)
+    return _call(prompt, max_tokens=2048)
 
 
 def shinsegae_analysis(data: dict) -> str:
@@ -76,7 +114,7 @@ def shinsegae_analysis(data: dict) -> str:
 2. 밸류에이션 평가 (PER/PBR 기준 저평가/고평가 여부)
 3. 단기 주가 전망 및 투자자 참고 사항
 """
-    return _call(prompt, max_tokens=600)
+    return _call(prompt, max_tokens=2048)
 
 
 def retail_sector_issues(report_date: str = "") -> tuple[str, list[str]]:
@@ -97,7 +135,7 @@ def retail_sector_issues(report_date: str = "") -> tuple[str, list[str]]:
 1. 국내 유통 섹터 주요 이슈 (2~3가지, 각 2~3문장, 출처 언론사/증권사명 병기)
 2. 해외 유통 섹터 동향 (1~2가지, 각 2문장, 출처 병기)
 """
-    analysis = _call(prompt, max_tokens=900)
+    analysis = _call(prompt, max_tokens=3000)
 
     # Representative reference sources for retail sector
     refs = [
