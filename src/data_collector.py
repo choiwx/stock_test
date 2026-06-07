@@ -174,89 +174,41 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _get_per_pbr_via_gemini(ticker: str, name: str) -> tuple[Optional[float], Optional[float]]:
-    """Gemini Google Search 그라운딩으로 PER/PBR 검색."""
-    import json
-    import os
-    try:
-        from google import genai
-        from google.genai import types
-
-        prompt = (
-            f"한국 주식 종목 {name}(종목코드: {ticker})의 현재 PER(주가수익비율)과 PBR(주가순자산비율) 수치를 "
-            f"네이버 증권 또는 최신 금융 데이터에서 찾아주세요.\n"
-            f"반드시 아래 JSON 형식으로만 답하세요. 다른 설명은 절대 추가하지 마세요.\n"
-            f'예시: {{"per": 12.34, "pbr": 0.56}}\n'
-            f"값이 없거나 확인 불가면 null로 표시하세요."
-        )
-
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-        preferred = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-flash"]
-        available = [m.name.replace("models/", "") for m in client.models.list()]
-        model = next((m for m in preferred if m in available), available[0] if available else "gemini-2.5-flash")
-
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-                temperature=0,
-            ),
-        )
-
-        text = (response.text or "").strip()
-        logger.info(f"{ticker} Gemini PER/PBR 응답: {text[:200]}")
-
-        json_str = text
-        if "```" in text:
-            json_str = text.split("```")[1].replace("json", "").strip()
-        data = json.loads(json_str)
-        per = _num(data.get("per"))
-        pbr = _num(data.get("pbr"))
-        return per, pbr
-
-    except Exception as e:
-        logger.warning(f"{ticker} Gemini PER/PBR 실패: {e}")
-        return None, None
-
-
 def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Optional[float], str]:
     """
-    Gemini Google Search → 모바일 API 순서로 PER, PBR 추출.
+    네이버 증권 동일업종비교 표에서 lxml XPath로 PER/PBR 추출.
+    사용자 확인 XPath 기준:
+      PER → //table/tbody/tr[13]/td[1]
+      PBR → //table/tbody/tr[14]/td[1]
+    동일업종비교 표는 coinfo.naver iframe에 정적 HTML로 존재.
     반환: (per, pbr, source_note)
     """
-    # ── 1단계: Gemini Google Search ────────────────────────────────
-    per, pbr = _get_per_pbr_via_gemini(ticker, name)
-    if per is not None or pbr is not None:
-        logger.info(f"{ticker} PER={per}, PBR={pbr} (Gemini)")
-        return per, pbr, "네이버 증권 (동일업종비교)"
-
-    # ── 2단계: 모바일 API fallback ─────────────────────────────────
     try:
-        r = requests.get(
-            f"https://m.stock.naver.com/api/stock/{ticker}/basic",
-            headers=_NAVER_HEADERS, timeout=10,
-        )
+        from lxml import etree
+
+        url = f"https://finance.naver.com/item/coinfo.naver?code={ticker}&target=compare"
+        r = requests.get(url, headers=_NAVER_HTML_HEADERS, timeout=15)
         r.raise_for_status()
-        data = r.json()
 
-        per = _num(data.get("per") or data.get("trailingPE"))
-        pbr = _num(data.get("pbr") or data.get("priceToBook"))
+        tree = etree.HTML(r.content)
 
-        for item in data.get("stockItemTotalInfos", []):
-            code_field = str(item.get("code", "") or item.get("key", "") or "").upper()
-            val = item.get("value")
-            if code_field == "PER" and per is None:
-                per = _num(val)
-            elif code_field == "PBR" and pbr is None:
-                pbr = _num(val)
+        per_nodes = tree.xpath("//table/tbody/tr[13]/td[1]")
+        pbr_nodes = tree.xpath("//table/tbody/tr[14]/td[1]")
+
+        per_text = "".join(per_nodes[0].itertext()).strip() if per_nodes else None
+        pbr_text = "".join(pbr_nodes[0].itertext()).strip() if pbr_nodes else None
+
+        logger.info(f"{ticker} XPath raw → PER={per_text!r}, PBR={pbr_text!r}")
+
+        per = _num(per_text)
+        pbr = _num(pbr_text)
 
         if per is not None or pbr is not None:
-            logger.info(f"{ticker} PER={per}, PBR={pbr} (모바일 API fallback)")
-            return per, pbr, "네이버 증권 API"
+            logger.info(f"{ticker} PER={per}, PBR={pbr} (동일업종비교 XPath)")
+            return per, pbr, "네이버 증권 (동일업종비교)"
+
     except Exception as e:
-        logger.info(f"{ticker} 모바일 API 실패: {e}")
+        logger.warning(f"{ticker} XPath 크롤링 실패: {e}")
 
     return None, None, ""
 
@@ -295,7 +247,7 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR — Gemini Search
+        # PER/PBR — 네이버 동일업종비교 XPath
         per, pbr, src = _get_naver_per_pbr(ticker, name)
         row["per"] = per
         row["pbr"] = pbr
