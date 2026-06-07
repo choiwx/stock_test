@@ -85,11 +85,45 @@ def get_market_summary(date_str: str) -> dict:
     return result
 
 
+def _fetch_krx_gold_naver() -> Optional[dict]:
+    """
+    KRX 금시장 금 99.99K(1kg) 현물 g당 종가(KRW/g)를 Naver 시세 API에서 조회.
+    reutersCode M04020000 = 국내 금 시세(KRX 금시장 기준, 원/g).
+    """
+    import requests
+
+    url = (
+        "https://m.stock.naver.com/front-api/marketIndex/prices"
+        "?category=metals&reutersCode=M04020000&page=1&pageSize=10"
+    )
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://m.stock.naver.com/"}
+    r = requests.get(url, headers=headers, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    prices = data.get("result") or data.get("prices") or []
+    if isinstance(prices, dict):
+        prices = prices.get("prices", [])
+    if len(prices) < 2:
+        return None
+
+    def _num(v):
+        return float(str(v).replace(",", ""))
+
+    close = _num(prices[0]["closePrice"])
+    prev_close = _num(prices[1]["closePrice"])
+    return {
+        "close": close,
+        "change": close - prev_close,
+        "change_pct": _pct(close, prev_close),
+        "unit": "KRW/g",
+    }
+
+
 def get_fx_and_gold(date_str: str) -> dict:
     """
     원/달러: 서울외국환중개 기준 — FDR USD/KRW (매매기준율, 서울외환시장 종가 반영)
-    금: KRX 금시장 1kg 현물 g당 종가 — FDR KRX/GOLD
-         KRX/GOLD 미지원 시 국제 금 선물(GC=F) * USD/KRW / 31.1035 로 KRW/g 환산
+    금: KRX 금시장 금 99.99K(1kg) 현물 g당 종가(KRW/g) — Naver KRX 금시세 API
+         실패 시 국제 금 선물(GC=F) * USD/KRW / 31.1035 로 KRW/g 환산(보조)
     """
     end = datetime.strptime(date_str, "%Y%m%d")
     start = end - timedelta(days=14)
@@ -111,24 +145,15 @@ def get_fx_and_gold(date_str: str) -> dict:
     except Exception as e:
         logger.warning(f"USD/KRW fetch failed: {e}")
 
-    # ── KRX 금현물 (g당 원화) ─────────────────────────────────────
+    # ── KRX 금시장 금현물 (KRW/g) ─────────────────────────────────
     krx_gold_ok = False
     try:
-        df = _fetch_fdr("KRX/GOLD", start, end)
-        pair = _latest_two_rows(df)
-        if pair:
-            latest, prev = pair
-            close = float(latest["Close"])
-            prev_close = float(prev["Close"])
-            result["gold"] = {
-                "close": close,
-                "change": close - prev_close,
-                "change_pct": _pct(close, prev_close),
-                "unit": "KRW/g",
-            }
+        gold = _fetch_krx_gold_naver()
+        if gold:
+            result["gold"] = gold
             krx_gold_ok = True
     except Exception as e:
-        logger.warning(f"KRX/GOLD fetch failed: {e}")
+        logger.warning(f"KRX gold (Naver) fetch failed: {e}")
 
     if not krx_gold_ok:
         # Fallback: 국제 금 선물 (USD/troy-oz) → KRW/g
