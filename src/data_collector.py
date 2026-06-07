@@ -178,93 +178,79 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 def _get_naver_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
     """
-    네이버 증권에서 PER, PBR 추출.
+    네이버 증권 동일업종비교 표에서 해당 종목의 PER, PBR 추출.
     반환: (per, pbr, source_note)
     """
-    per, pbr, source = None, None, ""
+    per, pbr = None, None
 
-    # ── 1단계: 네이버 내부 API /basic ──────────────────────────────
     try:
-        r = requests.get(
-            f"https://m.stock.naver.com/api/stock/{ticker}/basic",
-            headers=_NAVER_HEADERS, timeout=10,
-        )
-        r.raise_for_status()
-        data = r.json()
+        from bs4 import BeautifulSoup
 
-        # 직접 필드
-        per = _num(data.get("per") or data.get("trailingPE") or data.get("trailingPEX"))
-        pbr = _num(data.get("pbr") or data.get("priceToBook"))
-
-        # stockItemTotalInfos 배열
-        for item in data.get("stockItemTotalInfos", []):
-            code_field = str(item.get("code", "") or item.get("key", "") or "").upper()
-            val = item.get("value")
-            if code_field == "PER" and per is None:
-                per = _num(val)
-            elif code_field == "PBR" and pbr is None:
-                pbr = _num(val)
-
-        if per is not None or pbr is not None:
-            source = "네이버 증권 API"
-            logger.info(f"{ticker} PER={per}, PBR={pbr} (API)")
-            return per, pbr, source
-    except Exception as e:
-        logger.info(f"{ticker} /basic API 실패: {e}")
-
-    # ── 2단계: 네이버 증권 HTML 파싱 ──────────────────────────────
-    try:
         r = requests.get(
             f"https://finance.naver.com/item/main.naver?code={ticker}",
-            headers=_NAVER_HTML_HEADERS, timeout=10,
+            headers=_NAVER_HTML_HEADERS, timeout=15,
         )
         r.raise_for_status()
-        html = r.text
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        try:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(html, "html.parser")
+        # "동일업종비교" 섹션: class에 "compare_industry" 포함하는 div
+        section = soup.find("div", class_=lambda c: c and "compare_industry" in c)
+        if section is None:
+            # fallback: 텍스트로 탐색
+            for tag in soup.find_all(["h4", "h3", "strong"]):
+                if "동일업종비교" in tag.get_text():
+                    section = tag.find_parent("div")
+                    break
 
-            # 투자정보 테이블에서 PER/PBR 추출
-            for table in soup.find_all("table"):
-                headers_row = table.find_all("th")
-                cells_row = table.find_all("td")
-                header_texts = [th.get_text(strip=True) for th in headers_row]
-                cell_texts = [td.get_text(strip=True) for td in cells_row]
+        target_table = None
+        if section:
+            target_table = section.find("table")
 
-                for i, h in enumerate(header_texts):
-                    if "PER" in h and i < len(cell_texts):
-                        per = per or _num(cell_texts[i])
-                    if "PBR" in h and i < len(cell_texts):
-                        pbr = pbr or _num(cell_texts[i])
+        # 섹션을 못 찾으면 PER·PBR 헤더가 모두 있는 마지막 테이블 사용
+        if target_table is None:
+            for tbl in soup.find_all("table"):
+                ths = [th.get_text(strip=True) for th in tbl.find_all("th")]
+                if any("PER" in h for h in ths) and any("PBR" in h for h in ths):
+                    target_table = tbl
 
-            # em 태그 직접 탐색 (Naver 투자정보 구조)
-            if per is None or pbr is None:
-                for em in soup.find_all("em"):
-                    prev_th = em.find_previous("th")
-                    if prev_th:
-                        label = prev_th.get_text(strip=True)
-                        if "PER" in label and per is None:
-                            per = _num(em.get_text(strip=True))
-                        elif "PBR" in label and pbr is None:
-                            pbr = _num(em.get_text(strip=True))
+        if target_table is None:
+            logger.warning(f"{ticker} 동일업종비교 테이블 없음")
+            return None, None, ""
 
-        except ImportError:
-            # BeautifulSoup 없을 경우 regex fallback
-            per_m = re.search(r'PER[^0-9]{0,20}([\d]{1,4}\.?\d{0,2})', html)
-            pbr_m = re.search(r'PBR[^0-9]{0,20}([\d]{1,2}\.?\d{0,2})', html)
-            if per_m:
-                per = per or _num(per_m.group(1))
-            if pbr_m:
-                pbr = pbr or _num(pbr_m.group(1))
+        # 헤더 행에서 PER·PBR 열 인덱스 파악
+        header_row = target_table.find("thead")
+        if header_row is None:
+            header_row = target_table.find("tr")
+        ths = header_row.find_all("th") if header_row else []
+        col_names = [th.get_text(strip=True) for th in ths]
 
-        if per is not None or pbr is not None:
-            source = "네이버 증권 (기업실적분석)"
-            logger.info(f"{ticker} PER={per}, PBR={pbr} (HTML)")
+        per_idx = next((i for i, h in enumerate(col_names) if "PER" in h), None)
+        pbr_idx = next((i for i, h in enumerate(col_names) if "PBR" in h), None)
 
+        if per_idx is None and pbr_idx is None:
+            logger.warning(f"{ticker} 동일업종비교 표에 PER/PBR 열 없음: {col_names}")
+            return None, None, ""
+
+        # tbody 첫 번째 행 = 해당 종목 본인 데이터
+        tbody = target_table.find("tbody")
+        first_row = tbody.find("tr") if tbody else target_table.find_all("tr", limit=3)[-1]
+        tds = first_row.find_all("td")
+
+        if per_idx is not None and per_idx < len(tds):
+            per = _num(tds[per_idx].get_text(strip=True))
+        if pbr_idx is not None and pbr_idx < len(tds):
+            pbr = _num(tds[pbr_idx].get_text(strip=True))
+
+        logger.info(f"{ticker} PER={per}, PBR={pbr} (동일업종비교)")
+
+    except ImportError:
+        logger.warning("beautifulsoup4 미설치 — PER/PBR 수집 불가")
+        return None, None, ""
     except Exception as e:
-        logger.info(f"{ticker} HTML 파싱 실패: {e}")
+        logger.warning(f"{ticker} 동일업종비교 파싱 실패: {e}")
+        return None, None, ""
 
+    source = "네이버 증권 (동일업종비교)" if (per is not None or pbr is not None) else ""
     return per, pbr, source
 
 
@@ -302,7 +288,7 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR — 네이버 증권
+        # PER/PBR — 네이버 증권 동일업종비교
         per, pbr, src = _get_naver_per_pbr(ticker)
         row["per"] = per
         row["pbr"] = pbr
