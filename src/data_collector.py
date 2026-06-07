@@ -71,7 +71,6 @@ def get_market_summary(date_str: str) -> dict:
             data = _get(f"https://m.stock.naver.com/api/index/{index_code}/basic")
             close = _num(data.get("closePrice"))
 
-            # compareToPreviousPrice 파싱 (dict 형태)
             compare = data.get("compareToPreviousPrice", {})
             if isinstance(compare, dict):
                 val = _num(compare.get("value"))
@@ -94,33 +93,19 @@ def get_market_summary(date_str: str) -> dict:
     return result
 
 
-def _naver_front_prices(category: str, reuters_code: str, page_size: int = 5) -> list:
-    """네이버 front-api marketIndex/prices (금, 환율 등)."""
-    try:
-        url = (
-            "https://m.stock.naver.com/front-api/marketIndex/prices"
-            f"?category={category}&reutersCode={reuters_code}&page=1&pageSize={page_size}"
-        )
-        data = _get(url)
-        prices = data.get("result") or data.get("prices") or []
-        if isinstance(prices, dict):
-            prices = prices.get("prices", [])
-        return prices
-    except Exception as e:
-        logger.warning(f"front-api {category}/{reuters_code} failed: {e}")
-        return []
-
-
 def get_fx_and_gold(date_str: str) -> dict:
     """
-    원/달러: 네이버 front-api (환전고시환율 매매기준율).
-    금: 네이버 front-api (KRX 국내금 g당 원화).
+    원/달러: 네이버 환전고시환율 API.
+    금: 네이버 KRX 금시장 (KRW/g).
     """
     result = {"usdkrw": {}, "gold": {}}
 
-    # ── 원/달러 환율 (환전고시환율) — front-api 사용 ────────────
     try:
-        prices = _naver_front_prices("exchange", "FX_USDKRW", page_size=5)
+        prices_data = _get("https://m.stock.naver.com/api/marketIndex/prices?category=exchange&reutersCode=FX_USDKRW&page=1&pageSize=5")
+        prices = prices_data.get("result", []) or prices_data.get("prices", [])
+        if isinstance(prices, dict):
+            prices = prices.get("prices", [])
+        
         if len(prices) >= 2:
             close = _num(prices[0].get("closePrice"))
             prev_close = _num(prices[1].get("closePrice"))
@@ -131,11 +116,14 @@ def get_fx_and_gold(date_str: str) -> dict:
                     "change_pct": _pct(close, prev_close),
                 }
     except Exception as e:
-        logger.warning(f"USD/KRW front-api failed: {e}")
+        logger.warning(f"USD/KRW API failed: {e}")
 
-    # ── 금 (KRX 국내금 현물 g당 원화) ────────────────────────────
     try:
-        prices = _naver_front_prices("metals", "M04020000", page_size=10)
+        prices_data = _get("https://m.stock.naver.com/api/marketIndex/prices?category=metals&reutersCode=M04020000&page=1&pageSize=10")
+        prices = prices_data.get("result", []) or prices_data.get("prices", [])
+        if isinstance(prices, dict):
+            prices = prices.get("prices", [])
+        
         if len(prices) >= 2:
             close = _num(prices[0].get("closePrice"))
             prev_close = _num(prices[1].get("closePrice"))
@@ -153,7 +141,7 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 
 def get_stock_data(date_str: str) -> list[dict]:
-    """신세계그룹 종목 — 네이버 API."""
+    """신세계그룹 종목 — 네이버 /api/stock/{code}."""
     rows = []
 
     for ticker, name in SHINSEGAE_TICKERS.items():
@@ -164,18 +152,10 @@ def get_stock_data(date_str: str) -> list[dict]:
         }
 
         try:
-            # /api/stock/{code}로 통합 정보 조회
             data = _get(f"https://m.stock.naver.com/api/stock/{ticker}")
-            all_keys = list(data.keys()) if isinstance(data, dict) else []
-            logger.info(f"Stock {ticker} ({name}) - All API keys: {all_keys}")
-
-            # Log entire response for first ticker for debugging
-            if ticker == "004170":
-                logger.info(f"Full response for {ticker}: {data}")
 
             close = _num(data.get("closePrice"))
 
-            # compareToPreviousPrice 파싱
             compare = data.get("compareToPreviousPrice", {})
             if isinstance(compare, dict):
                 val = _num(compare.get("value"))
@@ -193,42 +173,27 @@ def get_stock_data(date_str: str) -> list[dict]:
             prev_close = (close - change) if (close is not None and change is not None) else None
             volume = _num(data.get("accumulatedTradingVolume"))
 
-            # PER / PBR — 다양한 필드명 시도
             per = _num(data.get("per") or data.get("trailingPE") or data.get("trailingPEX"))
             pbr = _num(data.get("pbr") or data.get("priceToBook"))
 
-            logger.info(f"Stock {ticker} - PER from direct fields: {per}, PBR: {pbr}")
-
-            # stockItemTotalInfos 또는 fundamentals 배열에서 추출
             for item in data.get("stockItemTotalInfos", []) + data.get("fundamentals", []):
                 if isinstance(item, dict):
                     code_field = str(item.get("code", "") or item.get("key", "") or "").upper()
                     val = item.get("value")
-                    logger.debug(f"Stock {ticker} - Array item code_field: {code_field}, value: {val}")
                     if code_field == "PER":
                         per = per or _num(val)
                     elif code_field == "PBR":
                         pbr = pbr or _num(val)
 
-            logger.info(f"Stock {ticker} - After array extraction: PER={per}, PBR={pbr}")
-
-            # /api/stock/{code}/summary에서 추가 시도 (PER/PBR이 없으면)
             if per is None or pbr is None:
                 try:
                     summary = _get(f"https://m.stock.naver.com/api/stock/{ticker}/summary")
-                    summary_keys = list(summary.keys()) if isinstance(summary, dict) else []
-                    logger.info(f"Stock {ticker} - summary API keys: {summary_keys}")
-
                     if per is None:
                         per = _num(summary.get("per") or summary.get("trailingPE"))
-                        logger.info(f"Stock {ticker} - PER from summary: {per}")
                     if pbr is None:
                         pbr = _num(summary.get("pbr") or summary.get("priceToBook"))
-                        logger.info(f"Stock {ticker} - PBR from summary: {pbr}")
-                except Exception as e:
-                    logger.info(f"Stock {ticker} - summary API failed: {e}")
-
-            logger.info(f"Stock {ticker} - Final PER: {per}, PBR: {pbr}")
+                except Exception:
+                    pass
 
             row.update({
                 "close": close,
