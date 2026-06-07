@@ -21,7 +21,7 @@ _HEADERS = {
 }
 
 
-def _get(url: str) -> dict:
+def _get(url: str) -> dict | list:
     r = requests.get(url, headers=_HEADERS, timeout=15)
     r.raise_for_status()
     return r.json()
@@ -37,21 +37,19 @@ def _num(val) -> Optional[float]:
         return None
 
 
-def _extract_change(compare_dict) -> Optional[float]:
+def _signed_change(compare_field) -> Optional[float]:
     """
-    네이버 API의 compareToPreviousPrice 필드 파싱.
-    {"code": "2", "text": "상승", "value": "1,234.00"} 형태.
+    네이버 API compareToPreviousPrice 파싱.
+    dict 형태: {"code":"4","text":"하락","value":"9,000"}
     code: 1=보합, 2=상승, 3=상한, 4=하락, 5=하한
     """
-    if not isinstance(compare_dict, dict):
-        return _num(compare_dict)
-    val = _num(compare_dict.get("value"))
-    if val is None:
-        return None
-    code = str(compare_dict.get("code", "1"))
-    if code in ("4", "5"):
-        return -abs(val)
-    return abs(val)
+    if isinstance(compare_field, dict):
+        val = _num(compare_field.get("value"))
+        if val is None:
+            return None
+        code = str(compare_field.get("code", "1"))
+        return -abs(val) if code in ("4", "5") else abs(val)
+    return _num(compare_field)
 
 
 def _pct(close, prev) -> Optional[float]:
@@ -60,8 +58,24 @@ def _pct(close, prev) -> Optional[float]:
     return None
 
 
+def _naver_prices(category: str, reuters_code: str, page_size: int = 5) -> list:
+    """
+    네이버 front-api marketIndex/prices 공통 호출.
+    금(M04020000), 외환(FX_USDKRW) 등에 사용.
+    """
+    url = (
+        "https://m.stock.naver.com/front-api/marketIndex/prices"
+        f"?category={category}&reutersCode={reuters_code}&page=1&pageSize={page_size}"
+    )
+    data = _get(url)
+    prices = data.get("result") or data.get("prices") or []
+    if isinstance(prices, dict):
+        prices = prices.get("prices", [])
+    return prices
+
+
 def get_last_trading_day(base_date: Optional[datetime] = None) -> str:
-    """가장 최근 KRX 거래일(YYYYMMDD) 반환 — 네이버 KOSPI 데이터 기반."""
+    """가장 최근 KRX 거래일(YYYYMMDD) — 네이버 KOSPI 데이터 기반."""
     if base_date is None:
         base_date = datetime.today()
 
@@ -80,14 +94,14 @@ def get_last_trading_day(base_date: Optional[datetime] = None) -> str:
 
 
 def get_market_summary(date_str: str) -> dict:
-    """KOSPI / KOSDAQ 지수 — 네이버 증권 지수 API."""
+    """KOSPI / KOSDAQ 지수 — 네이버 /api/index/{code}/basic."""
     result = {"date": date_str, "kospi": {}, "kosdaq": {}}
 
     for key, index_code in [("kospi", "KOSPI"), ("kosdaq", "KOSDAQ")]:
         try:
             data = _get(f"https://m.stock.naver.com/api/index/{index_code}/basic")
             close = _num(data.get("closePrice"))
-            change = _extract_change(data.get("compareToPreviousPrice"))
+            change = _signed_change(data.get("compareToPreviousPrice"))
             change_pct = _num(data.get("fluctuationsRatio"))
             if close is not None:
                 result[key] = {
@@ -103,36 +117,43 @@ def get_market_summary(date_str: str) -> dict:
 
 def get_fx_and_gold(date_str: str) -> dict:
     """
-    원/달러: 네이버 외환 API (FX_USDKRW).
-    금: KRX 금시장 현물 g당 원화 — 네이버 금시세 API (M04020000).
+    원/달러: 네이버 front-api (FX_USDKRW) — 금 API와 동일한 방식.
+    금: KRX 금시장 국내금 g당 원화 — 네이버 front-api (M04020000).
     """
     result = {"usdkrw": {}, "gold": {}}
 
     # ── 원/달러 환율 ──────────────────────────────────────────────
     try:
-        data = _get("https://m.stock.naver.com/api/forex/FX_USDKRW/basic")
-        close = _num(data.get("closePrice") or data.get("basePrice"))
-        change = _extract_change(data.get("compareToPreviousPrice"))
-        change_pct = _num(data.get("fluctuationsRatio") or data.get("changeRate"))
-        if close is not None:
-            result["usdkrw"] = {
-                "close": close,
-                "change": change,
-                "change_pct": change_pct,
-            }
+        prices = _naver_prices("exchange", "FX_USDKRW", page_size=5)
+        if len(prices) >= 2:
+            close = _num(prices[0].get("closePrice"))
+            prev_close = _num(prices[1].get("closePrice"))
+            if close is not None:
+                result["usdkrw"] = {
+                    "close": close,
+                    "change": (close - prev_close) if prev_close is not None else None,
+                    "change_pct": _pct(close, prev_close),
+                }
     except Exception as e:
-        logger.warning(f"USD/KRW (Naver) fetch failed: {e}")
+        logger.warning(f"USD/KRW (Naver front-api) fetch failed: {e}")
+        # Fallback: /api/forex endpoint
+        try:
+            data = _get("https://m.stock.naver.com/api/forex/FX_USDKRW/basic")
+            close = _num(data.get("closePrice") or data.get("basePrice"))
+            change = _signed_change(data.get("compareToPreviousPrice"))
+            change_pct = _num(data.get("fluctuationsRatio") or data.get("changeRate"))
+            if close is not None:
+                result["usdkrw"] = {
+                    "close": close,
+                    "change": change,
+                    "change_pct": change_pct,
+                }
+        except Exception as e2:
+            logger.warning(f"USD/KRW fallback fetch failed: {e2}")
 
-    # ── KRX 금시장 금현물 (KRW/g) ─────────────────────────────────
+    # ── KRX 국내금 현물 (KRW/g) ──────────────────────────────────
     try:
-        url = (
-            "https://m.stock.naver.com/front-api/marketIndex/prices"
-            "?category=metals&reutersCode=M04020000&page=1&pageSize=10"
-        )
-        data = _get(url)
-        prices = data.get("result") or data.get("prices") or []
-        if isinstance(prices, dict):
-            prices = prices.get("prices", [])
+        prices = _naver_prices("metals", "M04020000", page_size=10)
         if len(prices) >= 2:
             close = _num(prices[0].get("closePrice"))
             prev_close = _num(prices[1].get("closePrice"))
@@ -151,14 +172,17 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 def get_stock_data(date_str: str) -> list[dict]:
     """
-    신세계그룹 종목 종가·등락·PER·PBR — 네이버 증권 종목 API.
-    응답 예시:
-      closePrice: "650,000"
-      compareToPreviousPrice: {"code":"4","text":"하락","value":"9,000"}
-      fluctuationsRatio: "-1.37"
-      per: "15.23"
-      pbr: "0.85"
-      accumulatedTradingVolume: "12,345"
+    신세계그룹 종목 — 네이버 /api/stock/{code}/basic.
+
+    실제 응답 구조:
+      closePrice: "650,000"                          ← 종가
+      compareToPreviousPrice: {"code":"4","value":"9,000"}  ← 전일대비
+      fluctuationsRatio: "-1.37"                     ← 등락률
+      accumulatedTradingVolume: "12,345"             ← 거래량
+      stockItemTotalInfos: [                         ← PER, PBR 등 지표 목록
+        {"code":"PER", "value":"15.23", ...},
+        {"code":"PBR", "value":"0.85", ...},
+      ]
     """
     rows = []
 
@@ -172,12 +196,29 @@ def get_stock_data(date_str: str) -> list[dict]:
             data = _get(f"https://m.stock.naver.com/api/stock/{ticker}/basic")
 
             close = _num(data.get("closePrice"))
-            change = _extract_change(data.get("compareToPreviousPrice"))
+            change = _signed_change(data.get("compareToPreviousPrice"))
+
             change_pct = _num(data.get("fluctuationsRatio"))
+            if change is None and close is not None and change_pct is not None:
+                prev_close_est = close / (1 + change_pct / 100)
+                change = close - prev_close_est
+
             prev_close = (close - change) if (close is not None and change is not None) else None
             volume = _num(data.get("accumulatedTradingVolume") or data.get("tradingVolume"))
-            per = _num(data.get("per"))
-            pbr = _num(data.get("pbr"))
+
+            # PER / PBR — stockItemTotalInfos 배열에서 추출
+            per, pbr = None, None
+            for item in data.get("stockItemTotalInfos", []):
+                code = str(item.get("code", "") or item.get("key", "") or "")
+                val = item.get("value")
+                if code.upper() == "PER":
+                    per = _num(val)
+                elif code.upper() == "PBR":
+                    pbr = _num(val)
+            if per is None:
+                per = _num(data.get("per"))
+            if pbr is None:
+                pbr = _num(data.get("pbr"))
 
             row.update({
                 "close": close,
