@@ -174,40 +174,30 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Optional[float], str]:
-    """네이버 증권 API에서 PER/PBR 추출."""
+def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
+    """PER/PBR 추출: Yahoo Finance(PBR) + 네이버 sise(PER)."""
     per, pbr = None, None
 
-    # 1차: 모바일 /index API (투자지표 — PER, PBR 포함)
-    _index_urls = [
-        f"https://m.stock.naver.com/api/stock/{ticker}/index",
-        f"https://m.stock.naver.com/api/stock/{ticker}/finance/summary",
-        f"https://m.stock.naver.com/api/stock/{ticker}/totalInfos",
-    ]
-    for url in _index_urls:
-        try:
-            r = requests.get(url, headers=_NAVER_HEADERS, timeout=10)
-            r.raise_for_status()
-            data = r.json()
-            endpoint = url.split("/")[-1]
-            logger.info(f"{ticker} {endpoint}: type={type(data).__name__}, keys/len={list(data.keys())[:10] if isinstance(data, dict) else len(data)}")
-            if isinstance(data, dict):
-                per = _num(data.get("per") or data.get("PER") or data.get("perRatio"))
-                pbr = _num(data.get("pbr") or data.get("PBR") or data.get("pbrRatio"))
-            elif isinstance(data, list):
-                for item in data:
-                    label = str(item.get("label", "") or item.get("key", "") or item.get("name", "")).upper()
-                    if label == "PER":
-                        per = _num(item.get("value") or item.get("val"))
-                    elif label == "PBR":
-                        pbr = _num(item.get("value") or item.get("val"))
-            logger.info(f"{ticker} {endpoint} → PER={per}, PBR={pbr}")
+    # 1차: Yahoo Finance quoteSummary — PER(trailingPE) + PBR(priceToBook)
+    try:
+        yt = ticker + ".KS"
+        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{yt}?modules=defaultKeyStatistics,summaryDetail"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        result = data.get("quoteSummary", {}).get("result", [])
+        if result:
+            ks = result[0].get("defaultKeyStatistics", {})
+            sd = result[0].get("summaryDetail", {})
+            pbr = _num((ks.get("priceToBook") or {}).get("raw"))
+            per = _num((sd.get("trailingPE") or {}).get("raw"))
+            logger.info(f"{ticker} Yahoo Finance → PER={per}, PBR={pbr}")
             if per is not None or pbr is not None:
-                return per, pbr, "네이버 증권"
-        except Exception as e:
-            logger.warning(f"{ticker} {url.split('/')[-1]} 실패: {e}")
+                return per, pbr, "Yahoo Finance / 네이버 증권"
+    except Exception as e:
+        logger.warning(f"{ticker} Yahoo Finance 실패: {e}")
 
-    # 2차: sise 페이지 PER (em#_per) — PBR은 정적 HTML에 없음
+    # 2차: 네이버 sise PER (em#_per)
     try:
         from lxml import etree
         r = requests.get(
@@ -218,9 +208,9 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
         tree = etree.HTML(r.content)
         per_nodes = tree.xpath('//*[@id="_per"]')
         per = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
-        logger.info(f"{ticker} sise PER={per}, PBR=없음(정적HTML미지원)")
+        logger.info(f"{ticker} 네이버 sise PER={per}")
     except Exception as e:
-        logger.warning(f"{ticker} sise 페이지 실패: {e}")
+        logger.warning(f"{ticker} 네이버 sise 실패: {e}")
 
     if per is not None or pbr is not None:
         return per, pbr, "네이버 증권"
@@ -229,7 +219,7 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
 
 
 def get_stock_data(date_str: str) -> list[dict]:
-    """신세계그룹 종목 — FinanceDataReader + 네이버 PER/PBR."""
+    """신세계그룹 종목 — FinanceDataReader + PER/PBR."""
     rows = []
     per_pbr_source = ""
 
@@ -262,8 +252,8 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR — 네이버
-        per, pbr, src = _get_naver_per_pbr(ticker, name)
+        # PER/PBR
+        per, pbr, src = _get_per_pbr(ticker)
         row["per"] = per
         row["pbr"] = pbr
         if src and not per_pbr_source:
