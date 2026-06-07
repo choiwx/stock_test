@@ -195,8 +195,14 @@ def _get_per_pbr_via_gemini(ticker: str) -> tuple[Optional[float], Optional[floa
         )
 
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+        # 사용 가능한 모델 중 url_context 지원 모델 선택
+        preferred = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-1.5-flash"]
+        available = [m.name.replace("models/", "") for m in client.models.list()]
+        model = next((m for m in preferred if m in available), available[0] if available else "gemini-2.5-flash")
+
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 tools=[types.Tool(url_context=types.UrlContext())],
