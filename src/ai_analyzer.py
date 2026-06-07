@@ -45,19 +45,30 @@ def _resolve_model(client) -> str:
     raise RuntimeError("사용 가능한 Gemini 모델이 없습니다. API 키를 확인하세요.")
 
 
-def _call(prompt: str, max_tokens: int = 2048) -> str:
+def _generate(client, model, prompt, max_tokens, disable_thinking):
+    cfg_args = {"max_output_tokens": max_tokens, "temperature": 0.7}
+    if disable_thinking:
+        cfg_args["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    return client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(**cfg_args),
+    )
+
+
+def _call(prompt: str, max_tokens: int = 4096) -> str:
     try:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         model = _resolve_model(client)
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                max_output_tokens=max_tokens,
-                temperature=0.7,
-            ),
-        )
-        return response.text.strip()
+        try:
+            # 추론(thinking) 토큰을 끄고 답변에 토큰을 전부 사용
+            response = _generate(client, model, prompt, max_tokens, True)
+        except Exception as inner:
+            # thinking_config 미지원 모델이면 옵션 없이 재시도
+            logger.warning(f"thinking 비활성화 실패, 재시도: {inner}")
+            response = _generate(client, model, prompt, max_tokens, False)
+        text = (response.text or "").strip()
+        return text if text else "(AI 분석 결과가 비어 있습니다.)"
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
         return f"(AI 분석을 불러오지 못했습니다. 오류: {e})"
@@ -85,7 +96,7 @@ def market_summary_analysis(data: dict) -> str:
 
 주요 등락 원인과 국내외 거시경제 배경을 중심으로 요약해 주세요.
 """
-    return _call(prompt, max_tokens=1024)
+    return _call(prompt, max_tokens=2048)
 
 
 def shinsegae_analysis(data: dict) -> str:
@@ -116,7 +127,7 @@ def shinsegae_analysis(data: dict) -> str:
 2. 밸류에이션 평가 (PER/PBR 기준 저평가/고평가 여부)
 3. 단기 주가 전망 및 투자자 참고 사항
 """
-    return _call(prompt, max_tokens=1200)
+    return _call(prompt, max_tokens=2048)
 
 
 def retail_sector_issues() -> tuple[str, list[str]]:
@@ -131,7 +142,7 @@ def retail_sector_issues() -> tuple[str, list[str]]:
 
 전문적이고 실제 리포트처럼 작성해 주세요.
 """
-    analysis = _call(prompt, max_tokens=1600)
+    analysis = _call(prompt, max_tokens=3000)
 
     refs = [
         "https://www.hankyung.com/economy",
