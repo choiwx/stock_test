@@ -93,7 +93,7 @@ def get_fx_and_gold(date_str: str) -> dict:
                 change = (close - prev_close) if prev_close else None
                 change_pct = ((close - prev_close) / prev_close * 100) if prev_close else None
                 result["usdkrw"] = {"close": close, "change": change, "change_pct": change_pct}
-                logger.info(f"USD/KRW: close={close}")
+                logger.info(f"USD/KRW: close={close}, change_pct={change_pct:.2f}%" if change_pct else f"USD/KRW: close={close}")
         except Exception as e:
             logger.warning(f"USD/KRW 파싱 실패: {e}")
     else:
@@ -101,30 +101,54 @@ def get_fx_and_gold(date_str: str) -> dict:
 
     # 금 시세 — 네이버 M04020000 (KRX 국내금 현물 KRW/g)
     import requests as _req
+
+    def _parse_gold_price(p):
+        v = str(p.get("closePrice", "") or p.get("close", "") or p.get("price", "") or "").replace(",", "")
+        try:
+            return float(v) or None
+        except ValueError:
+            return None
+
     _gold_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
         "Referer": "https://m.stock.naver.com/",
     }
     _gold_urls = [
+        "https://m.stock.naver.com/front-api/marketIndex/prices?category=metals&reutersCode=M04020000",
+        "https://m.stock.naver.com/front-api/marketIndex/prices?category=metals&reutersCode=M04020000&count=5",
+        "https://m.stock.naver.com/front-api/marketIndex/prices?category=gold&reutersCode=M04020000&page=1&pageSize=5",
+        "https://m.stock.naver.com/front-api/marketIndex/M04020000/prices",
+        "https://m.stock.naver.com/api/index/M04020000/basic",
         "https://m.stock.naver.com/front-api/marketIndex/prices?category=metals&reutersCode=M04020000&page=1&pageSize=5",
-        "https://m.stock.naver.com/api/index/M04020000/prices?page=1&pageSize=5",
-        "https://m.stock.naver.com/api/marketIndex/prices?category=metals&reutersCode=M04020000&page=1&pageSize=5",
     ]
     for _gold_url in _gold_urls:
         try:
             r = _req.get(_gold_url, headers=_gold_headers, timeout=10)
             r.raise_for_status()
             data = r.json()
+            logger.info(f"Gold URL 성공: {_gold_url[:70]}, keys={list(data.keys()) if isinstance(data, dict) else type(data)}")
+
+            # /basic 엔드포인트: 단일 객체 응답
+            if isinstance(data, dict) and "closePrice" in data:
+                close = _parse_gold_price(data)
+                prev = data.get("previousClosePrice") or data.get("basePrice")
+                prev_close = float(str(prev).replace(",", "")) if prev else None
+                if close:
+                    result["gold"] = {
+                        "close": close,
+                        "change": (close - prev_close) if prev_close else None,
+                        "change_pct": ((close - prev_close) / prev_close * 100) if prev_close else None,
+                        "unit": "KRW/g",
+                    }
+                    logger.info(f"Gold (KRX M04020000): {close:,.0f} KRW/g")
+                    break
+
+            # prices 배열 응답
             prices = data.get("result") or data.get("prices") or data.get("data") or []
             if isinstance(prices, dict):
                 prices = prices.get("prices", [])
-            if len(prices) >= 2:
-                def _parse_gold_price(p):
-                    v = str(p.get("closePrice", "") or p.get("close", "") or "").replace(",", "")
-                    try:
-                        return float(v) or None
-                    except ValueError:
-                        return None
+            if isinstance(prices, list) and len(prices) >= 2:
                 close = _parse_gold_price(prices[0])
                 prev_close = _parse_gold_price(prices[1])
                 if close:
@@ -134,10 +158,10 @@ def get_fx_and_gold(date_str: str) -> dict:
                         "change_pct": ((close - prev_close) / prev_close * 100) if prev_close else None,
                         "unit": "KRW/g",
                     }
-                    logger.info(f"Gold (KRX M04020000): {close:,.0f} KRW/g (from {_gold_url[:60]})")
+                    logger.info(f"Gold (KRX M04020000): {close:,.0f} KRW/g")
                     break
         except Exception as e:
-            logger.warning(f"Gold URL 실패 ({_gold_url[:60]}): {e}")
+            logger.warning(f"Gold URL 실패 ({_gold_url[:65]}): {e}")
     else:
         logger.warning("KRX 금 시세: 모든 엔드포인트 실패")
 
@@ -181,7 +205,7 @@ def get_stock_data(date_str: str) -> list[dict]:
                 "per": None,
                 "pbr": None,
             })
-            logger.info(f"종목 {ticker}: close={close}, change_pct={change_pct}")
+            logger.info(f"종목 {ticker}: close={close}, change={change}, change_pct={change_pct}")
         except Exception as e:
             logger.warning(f"종목 {ticker} 파싱 실패: {e}")
 
