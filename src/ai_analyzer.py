@@ -7,14 +7,50 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash"
+# 선호 모델 순서 (위에서부터 사용 가능한 첫 번째를 채택)
+PREFERRED_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+]
+
+_cached_model = None
+
+
+def _resolve_model(client) -> str:
+    """이 API 키로 실제 호출 가능한 모델을 한 번만 조회해 캐싱."""
+    global _cached_model
+    if _cached_model:
+        return _cached_model
+
+    available = []
+    for m in client.models.list():
+        actions = getattr(m, "supported_actions", None) or []
+        if not actions or "generateContent" in actions:
+            available.append(m.name.replace("models/", ""))
+
+    for pref in PREFERRED_MODELS:
+        if pref in available:
+            _cached_model = pref
+            logger.info(f"Using Gemini model: {pref}")
+            return pref
+
+    if available:
+        _cached_model = available[0]
+        logger.info(f"Falling back to Gemini model: {available[0]}")
+        return available[0]
+
+    raise RuntimeError("사용 가능한 Gemini 모델이 없습니다. API 키를 확인하세요.")
 
 
 def _call(prompt: str, max_tokens: int = 2048) -> str:
     try:
         client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        model = _resolve_model(client)
         response = client.models.generate_content(
-            model=MODEL,
+            model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=max_tokens,
@@ -24,7 +60,7 @@ def _call(prompt: str, max_tokens: int = 2048) -> str:
         return response.text.strip()
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
-        return "(AI 분석을 불러오지 못했습니다.)"
+        return f"(AI 분석을 불러오지 못했습니다. 오류: {e})"
 
 
 def market_summary_analysis(data: dict) -> str:
