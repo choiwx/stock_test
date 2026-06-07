@@ -214,12 +214,19 @@ def _get_naver_per_pbr(ticker: str, name: str = "") -> tuple[Optional[float], Op
         )
         r2.raise_for_status()
         tree2 = etree.HTML(r2.content)
+        # 진단: 테이블 행 텍스트 샘플
+        all_rows = []
         for row in tree2.xpath('//table//tr'):
             cells = row.xpath('.//th | .//td')
-            texts = ["".join(c.itertext()).strip() for c in cells]
-            for i, t in enumerate(texts):
-                if t == "PBR" and i + 1 < len(texts):
-                    pbr2 = _num(texts[i + 1])
+            texts = [t for t in ("".join(c.itertext()).strip() for c in cells) if t]
+            if texts:
+                all_rows.append(texts)
+        logger.info(f"{ticker} main 테이블 행 샘플: {all_rows[:15]}")
+        # PBR 포함 행 탐색
+        for row_texts in all_rows:
+            for i, t in enumerate(row_texts):
+                if "PBR" in t and i + 1 < len(row_texts):
+                    pbr2 = _num(row_texts[i + 1])
                     if pbr2 is not None:
                         break
             if pbr2 is not None:
