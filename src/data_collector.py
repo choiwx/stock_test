@@ -173,18 +173,26 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _fetch_krx_fundamental(date_str: str) -> Optional[object]:
-    """pykrx 전체 시장 PER/PBR을 한 번만 조회."""
+def _fetch_krx_fundamental(date_str: str, tickers: list) -> dict:
+    """pykrx로 종목별 PER/PBR 조회."""
+    result = {}
     try:
         from pykrx import stock as krx_stock
-        df = krx_stock.get_market_fundamental(date_str, date_str)
-        if df is not None and not df.empty:
-            logger.info(f"pykrx fundamental 조회 성공: {len(df)}개 종목")
-            return df
-        logger.warning("pykrx fundamental: 빈 데이터")
-    except Exception as e:
-        logger.warning(f"pykrx fundamental 조회 실패: {e}")
-    return None
+        for ticker in tickers:
+            try:
+                df = krx_stock.get_market_fundamental(date_str, date_str, ticker)
+                if df is not None and not df.empty:
+                    per = _num(df["PER"].iloc[0]) if "PER" in df.columns else None
+                    pbr = _num(df["PBR"].iloc[0]) if "PBR" in df.columns else None
+                    result[ticker] = {"per": per, "pbr": pbr}
+                    logger.info(f"{ticker} pykrx PER={per}, PBR={pbr}")
+                else:
+                    logger.warning(f"{ticker} pykrx 데이터 없음")
+            except Exception as e:
+                logger.warning(f"{ticker} pykrx 조회 실패: {e}")
+    except ImportError as e:
+        logger.warning(f"pykrx import 실패: {e}")
+    return result
 
 
 def get_stock_data(date_str: str) -> list[dict]:
@@ -192,7 +200,7 @@ def get_stock_data(date_str: str) -> list[dict]:
     rows = []
     per_pbr_source = ""
 
-    fundamental_df = _fetch_krx_fundamental(date_str)
+    fundamental = _fetch_krx_fundamental(date_str, list(SHINSEGAE_TICKERS.keys()))
 
     for ticker, name in SHINSEGAE_TICKERS.items():
         row = {
@@ -224,12 +232,9 @@ def get_stock_data(date_str: str) -> list[dict]:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
         # PER/PBR — pykrx
-        if fundamental_df is not None and ticker in fundamental_df.index:
-            per = _num(fundamental_df.loc[ticker, "PER"]) if "PER" in fundamental_df.columns else None
-            pbr = _num(fundamental_df.loc[ticker, "PBR"]) if "PBR" in fundamental_df.columns else None
-            row["per"] = per
-            row["pbr"] = pbr
-            logger.info(f"{ticker} PER={per}, PBR={pbr}")
+        if ticker in fundamental:
+            row["per"] = fundamental[ticker]["per"]
+            row["pbr"] = fundamental[ticker]["pbr"]
             if not per_pbr_source:
                 per_pbr_source = "KRX"
         else:
