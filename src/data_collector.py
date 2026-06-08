@@ -1,6 +1,5 @@
 """Market data collection using FinanceDataReader."""
 import logging
-import re
 import requests
 from datetime import datetime, timedelta
 from typing import Optional
@@ -175,28 +174,12 @@ def get_fx_and_gold(date_str: str) -> dict:
 
 
 def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
-    """PER/PBR 추출: yfinance(PBR) + 네이버 sise(PER)."""
-    per, pbr = None, None
+    """PER: 네이버 sise em#_per."""
+    per = None
 
-    # 1차: yfinance — PER(trailingPE) + PBR(priceToBook)
-    try:
-        import yfinance as yf
-        info = yf.Ticker(ticker + ".KS").info
-        # 진단: 값이 있는 키 목록
-        filled = {k: v for k, v in info.items() if v is not None and v != "" and v != "N/A"}
-        logger.info(f"{ticker} yfinance filled keys: {list(filled.keys())[:30]}")
-        logger.info(f"{ticker} yfinance PER candidates: trailingPE={info.get('trailingPE')}, forwardPE={info.get('forwardPE')}, priceToBook={info.get('priceToBook')}, bookValue={info.get('bookValue')}")
-        per = _num(info.get("trailingPE") or info.get("forwardPE"))
-        pbr = _num(info.get("priceToBook"))
-        logger.info(f"{ticker} yfinance → PER={per}, PBR={pbr}")
-        if per is not None or pbr is not None:
-            return per, pbr, "네이버 증권"
-    except Exception as e:
-        logger.warning(f"{ticker} yfinance 실패: {e}")
-
-    # 2차: 네이버 sise PER (em#_per)
     try:
         from lxml import etree
+
         r = requests.get(
             f"https://finance.naver.com/item/sise.naver?code={ticker}",
             headers=_NAVER_HTML_HEADERS, timeout=10,
@@ -205,14 +188,11 @@ def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
         tree = etree.HTML(r.content)
         per_nodes = tree.xpath('//*[@id="_per"]')
         per = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
-        logger.info(f"{ticker} 네이버 sise PER={per}")
+        logger.info(f"{ticker} sise PER={per}")
     except Exception as e:
-        logger.warning(f"{ticker} 네이버 sise 실패: {e}")
+        logger.warning(f"{ticker} sise PER 실패: {e}")
 
-    if per is not None or pbr is not None:
-        return per, pbr, "네이버 증권"
-
-    return None, None, ""
+    return per, None, "네이버 증권" if per is not None else ""
 
 
 def get_stock_data(date_str: str) -> list[dict]:
