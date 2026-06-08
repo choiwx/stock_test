@@ -238,7 +238,7 @@ def get_stock_data(date_str: str) -> list[dict]:
             if not per_pbr_source:
                 per_pbr_source = "KRX"
         else:
-            logger.warning(f"{ticker} fundamental 데이터 없음")
+            logger.warning(f"{ticker} pykrx fundamental 데이터 없음")
 
         rows.append(row)
 
@@ -256,7 +256,7 @@ def collect_all(date_str: Optional[str] = None) -> dict:
     fx_gold = get_fx_and_gold(date_str)
     stocks = get_stock_data(date_str)
 
-    per_pbr_source = stocks[0].get("_per_pbr_source", "네이버 증권") if stocks else "네이버 증권"
+    per_pbr_source = stocks[0].get("_per_pbr_source", "KRX") if stocks else "KRX"
 
     return {
         "date": date_str,
