@@ -173,10 +173,11 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
-    """PER: 네이버 sise em#_per."""
-    per = None
+def _get_per_pbr(ticker: str, date_str: str) -> tuple[Optional[float], Optional[float], str]:
+    """PER: 네이버 sise em#_per / PBR: pykrx KRX 공식 데이터."""
+    per, pbr = None, None
 
+    # PER — 네이버 sise em#_per
     try:
         from lxml import etree
 
@@ -192,7 +193,20 @@ def _get_per_pbr(ticker: str) -> tuple[Optional[float], Optional[float], str]:
     except Exception as e:
         logger.warning(f"{ticker} sise PER 실패: {e}")
 
-    return per, None, "네이버 증권" if per is not None else ""
+    # PBR — pykrx
+    try:
+        from pykrx import stock as krx_stock
+
+        df = krx_stock.get_market_fundamental(date_str, date_str, ticker)
+        if df is not None and not df.empty and "PBR" in df.columns:
+            pbr = _num(df["PBR"].iloc[0])
+            logger.info(f"{ticker} pykrx PBR={pbr}")
+        else:
+            logger.warning(f"{ticker} pykrx PBR 데이터 없음")
+    except Exception as e:
+        logger.warning(f"{ticker} pykrx PBR 실패: {e}")
+
+    return per, pbr, "네이버 증권/KRX" if (per is not None or pbr is not None) else ""
 
 
 def get_stock_data(date_str: str) -> list[dict]:
@@ -230,7 +244,7 @@ def get_stock_data(date_str: str) -> list[dict]:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
         # PER/PBR
-        per, pbr, src = _get_per_pbr(ticker)
+        per, pbr, src = _get_per_pbr(ticker, date_str)
         row["per"] = per
         row["pbr"] = pbr
         if src and not per_pbr_source:
