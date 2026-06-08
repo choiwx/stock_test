@@ -173,46 +173,26 @@ def get_fx_and_gold(date_str: str) -> dict:
     return result
 
 
-def _get_per_pbr(ticker: str, date_str: str) -> tuple[Optional[float], Optional[float], str]:
-    """PER: 네이버 sise em#_per / PBR: pykrx KRX 공식 데이터."""
-    per, pbr = None, None
-
-    # PER — 네이버 sise em#_per
-    try:
-        from lxml import etree
-
-        r = requests.get(
-            f"https://finance.naver.com/item/sise.naver?code={ticker}",
-            headers=_NAVER_HTML_HEADERS, timeout=10,
-        )
-        r.raise_for_status()
-        tree = etree.HTML(r.content)
-        per_nodes = tree.xpath('//*[@id="_per"]')
-        per = _num("".join(per_nodes[0].itertext()).strip()) if per_nodes else None
-        logger.info(f"{ticker} sise PER={per}")
-    except Exception as e:
-        logger.warning(f"{ticker} sise PER 실패: {e}")
-
-    # PBR — pykrx
+def _fetch_krx_fundamental(date_str: str) -> Optional[object]:
+    """pykrx 전체 시장 PER/PBR을 한 번만 조회."""
     try:
         from pykrx import stock as krx_stock
-
-        df = krx_stock.get_market_fundamental(date_str, date_str, ticker)
-        if df is not None and not df.empty and "PBR" in df.columns:
-            pbr = _num(df["PBR"].iloc[0])
-            logger.info(f"{ticker} pykrx PBR={pbr}")
-        else:
-            logger.warning(f"{ticker} pykrx PBR 데이터 없음")
+        df = krx_stock.get_market_fundamental(date_str, date_str)
+        if df is not None and not df.empty:
+            logger.info(f"pykrx fundamental 조회 성공: {len(df)}개 종목")
+            return df
+        logger.warning("pykrx fundamental: 빈 데이터")
     except Exception as e:
-        logger.warning(f"{ticker} pykrx PBR 실패: {e}")
-
-    return per, pbr, "네이버 증권/KRX" if (per is not None or pbr is not None) else ""
+        logger.warning(f"pykrx fundamental 조회 실패: {e}")
+    return None
 
 
 def get_stock_data(date_str: str) -> list[dict]:
-    """신세계그룹 종목 — FinanceDataReader + 네이버 PER/PBR."""
+    """신세계그룹 종목 — FinanceDataReader + pykrx PER/PBR."""
     rows = []
     per_pbr_source = ""
+
+    fundamental_df = _fetch_krx_fundamental(date_str)
 
     for ticker, name in SHINSEGAE_TICKERS.items():
         row = {
@@ -243,12 +223,17 @@ def get_stock_data(date_str: str) -> list[dict]:
             except Exception as e:
                 logger.warning(f"종목 {ticker} 시세 파싱 실패: {e}")
 
-        # PER/PBR
-        per, pbr, src = _get_per_pbr(ticker, date_str)
-        row["per"] = per
-        row["pbr"] = pbr
-        if src and not per_pbr_source:
-            per_pbr_source = src
+        # PER/PBR — pykrx
+        if fundamental_df is not None and ticker in fundamental_df.index:
+            per = _num(fundamental_df.loc[ticker, "PER"]) if "PER" in fundamental_df.columns else None
+            pbr = _num(fundamental_df.loc[ticker, "PBR"]) if "PBR" in fundamental_df.columns else None
+            row["per"] = per
+            row["pbr"] = pbr
+            logger.info(f"{ticker} PER={per}, PBR={pbr}")
+            if not per_pbr_source:
+                per_pbr_source = "KRX"
+        else:
+            logger.warning(f"{ticker} fundamental 데이터 없음")
 
         rows.append(row)
 
